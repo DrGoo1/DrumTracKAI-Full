@@ -12,13 +12,9 @@ import subprocess
 import tempfile
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
-try:
-    from admin.services.central_database_service import CentralDatabaseService, CalibrationRenderJob
-except ImportError:
-    from admin.services.central_database_service import CentralDatabaseService
-
-    CalibrationRenderJob = Any
+from admin.services.central_database_service import CentralDatabaseService, CalibrationRenderJob
 
 
 logger = logging.getLogger(__name__)
@@ -278,17 +274,39 @@ class CalibrationRenderWorker:
                 continue
             storage_uri = str(artifact.get("storage_uri") or "").strip()
             artifact_type = str(artifact.get("artifact_type") or "candidate_audio").strip()
-            if not storage_uri or not artifact_type:
+            duration_sec = self._safe_float(artifact.get("duration_sec"))
+            sample_pack_version = str(artifact.get("sample_pack_version") or job.sample_pack_version or "").strip()
+            render_recipe = (artifact.get("render_recipe") if isinstance(artifact.get("render_recipe"), dict) else {}) or {}
+            if not storage_uri or not artifact_type or not self._storage_uri_allowed(storage_uri):
+                continue
+            if self._is_production() and (duration_sec is None or duration_sec <= 0 or not sample_pack_version):
+                continue
+            render_recipe = {
+                **render_recipe,
+                "renderer_version": str(
+                    render_recipe.get("renderer_version")
+                    or artifact.get("renderer_version")
+                    or os.getenv("CALIBRATION_RENDERER_VERSION", "unknown")
+                ),
+                "sample_pack_version": sample_pack_version,
+                "sha256": str(render_recipe.get("sha256") or artifact.get("sha256") or "").strip() or None,
+                "true_peak_db": self._safe_float(
+                    render_recipe.get("true_peak_db")
+                    if render_recipe.get("true_peak_db") is not None
+                    else artifact.get("true_peak_db")
+                ),
+            }
+            if self._is_production() and render_recipe["renderer_version"] in {"", "unknown"}:
                 continue
             normalized.append(
                 {
                     "artifact_id": str(artifact.get("artifact_id") or "").strip() or None,
                     "artifact_type": artifact_type,
                     "storage_uri": storage_uri,
-                    "duration_sec": self._safe_float(artifact.get("duration_sec")),
+                    "duration_sec": duration_sec,
                     "loudness_lufs": self._safe_float(artifact.get("loudness_lufs")),
-                    "sample_pack_version": str(artifact.get("sample_pack_version") or "").strip() or None,
-                    "render_recipe": (artifact.get("render_recipe") if isinstance(artifact.get("render_recipe"), dict) else {}) or {},
+                    "sample_pack_version": sample_pack_version or None,
+                    "render_recipe": render_recipe,
                 }
             )
 
@@ -325,6 +343,28 @@ class CalibrationRenderWorker:
             completed_at=completed_at,
             run_id=run_id,
         )
+
+    @staticmethod
+    def _is_production() -> bool:
+        return str(os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development"))).strip().lower() in {
+            "production",
+            "prod",
+            "live",
+        }
+
+    @classmethod
+    def _storage_uri_allowed(cls, storage_uri: str) -> bool:
+        raw = str(storage_uri or "").strip()
+        parsed = urlparse(raw)
+        if parsed.scheme.lower() in {"s3", "https"}:
+            return bool(parsed.netloc and parsed.path.lstrip("/"))
+        if parsed.scheme.lower() == "file":
+            return (not cls._is_production()) and bool(parsed.path)
+        if cls._is_production():
+            return False
+        if len(raw) >= 3 and raw[1] == ":" and raw[2] in {"\\", "/"}:
+            return True
+        return not parsed.scheme and bool(raw)
 
     @staticmethod
     def _safe_float(value: Any) -> Optional[float]:

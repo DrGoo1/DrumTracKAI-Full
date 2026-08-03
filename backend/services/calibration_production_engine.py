@@ -405,7 +405,12 @@ class CalibrationProductionEngine:
             if "unexpected keyword argument 'rng'" not in str(exc):
                 raise
             builder_kwargs.pop("rng", None)
-            track = build_drumtrack_for_dcsm(**builder_kwargs)
+            random_state = random.getstate()
+            random.seed(int(seed))
+            try:
+                track = build_drumtrack_for_dcsm(**builder_kwargs)
+            finally:
+                random.setstate(random_state)
         output_events = _from_dcsm_notes(track, songmap, pattern.ppqn)
         if not output_events:
             raise RuntimeError("Production DCSM builder returned no events")

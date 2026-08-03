@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field
 from admin.services.central_database_service import CentralDatabaseService
 from backend.security.supabase_auth import AuthenticatedUser, require_authenticated_user
 from backend.services.artifact_url_service import ArtifactUrlService
-from backend.services.calibration_trial_service import CalibrationTrialService, TrialCreateInput
+from backend.services.calibration_profile_resolver import CalibrationProfileUnavailable, validate_profile_overrides
+from backend.services.calibration_production_engine import validate_cfg_overrides
+from backend.services.calibration_trial_service import CalibrationDependencyError, CalibrationTrialService, TrialCreateInput
+from backend.services.production_performance_client import ProductionGenerationUnavailable
 from backend.services.calibration_v2_repository import (
     CalibrationAuthorizationError,
     CalibrationRecordNotFound,
@@ -69,8 +72,14 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     if isinstance(exc, CalibrationRecordNotFound):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, CalibrationDependencyError):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     if isinstance(exc, ValueError):
         return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    if isinstance(exc, ProductionGenerationUnavailable):
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Production generation is unavailable")
+    if isinstance(exc, CalibrationProfileUnavailable):
+        return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Calibration profile is unavailable")
     logger.exception("calibration_v2_request_failed")
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -176,22 +185,15 @@ class ReviewSubmitRequest(JudgmentSubmitRequest):
     ratings_b: Optional[Ratings] = None
 
 
-class ReviewerSubmitRequest(ReviewSubmitRequest):
-    item_id: str = Field(min_length=1)
-
-
 def _serialize_artifact(artifact: Any) -> Optional[Dict[str, Any]]:
     storage_uri = str(getattr(artifact, "storage_uri", "") or "").strip()
     url = _artifact_urls.build_url(storage_uri)
     if not url:
         return None
     return {
-        "artifact_id": str(getattr(artifact, "artifact_id", "")),
-        "artifact_type": str(getattr(artifact, "artifact_type", "candidate_audio")),
+        "artifact_type": "audio",
         "url": url,
         "duration_sec": getattr(artifact, "duration_sec", None),
-        "loudness_lufs": getattr(artifact, "loudness_lufs", None),
-        "sample_pack_version": getattr(artifact, "sample_pack_version", None),
     }
 
 
@@ -215,11 +217,8 @@ def _reviewer_item_payload(
     # Never include ab_mapping_json or calibration_trials.assignment_json here.
     return {
         "item_id": str(row["item_id"]),
-        "session_id": str(row["session_id"]),
-        "trial_id": str(row["trial_id"]),
         "target_drummer_slug": str(row["target_drummer_slug"]),
         "target_drummer_display_name": repo.drummer_display_name(str(row["target_drummer_slug"])),
-        "base_groove_id": str(row["base_groove_id"]),
         "eval_mode": "AB",
         "lanes": {
             "neutral": _lane_artifacts(db, row.get("baseline_run_id")),
@@ -357,31 +356,6 @@ def submit_review(
     except Exception as exc:
         raise _http_error(exc) from exc
 
-@router.post("/reviewer/submit")
-def reviewer_submit(
-    payload: ReviewerSubmitRequest,
-    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
-    context=Depends(_require_reviewer_context),
-    repo: CalibrationV2Repository = Depends(_repository),
-) -> Dict[str, Any]:
-    return submit_review(
-        item_id=payload.item_id,
-        payload=ReviewSubmitRequest(
-            preferred_candidate=payload.preferred_candidate,
-            closer_to_target=payload.closer_to_target,
-            better_feel=payload.better_feel,
-            more_musical=payload.more_musical,
-            confidence=payload.confidence,
-            comment=payload.comment,
-            ratings_a=payload.ratings_a,
-            ratings_b=payload.ratings_b,
-        ),
-        idempotency_key=idempotency_key,
-        context=context,
-        repo=repo,
-    )
-
-
 
 @router.post("/admin/reviewers")
 def provision_reviewer(
@@ -403,12 +377,14 @@ def create_treatment(
     repo: CalibrationV2Repository = Depends(_repository),
 ) -> Dict[str, Any]:
     try:
+        cfg_overrides = validate_cfg_overrides(payload.cfg_overrides)
+        profile_overrides = validate_profile_overrides(payload.profile_overrides)
         treatment_id = repo.create_treatment(
             drummer_slug=payload.drummer_slug,
             name=payload.name,
             description=payload.description,
-            cfg_overrides=payload.cfg_overrides,
-            profile_overrides=payload.profile_overrides,
+            cfg_overrides=cfg_overrides,
+            profile_overrides=profile_overrides,
             base_model_version=payload.base_model_version,
             created_by=admin.user_id,
             status_value=payload.status,
