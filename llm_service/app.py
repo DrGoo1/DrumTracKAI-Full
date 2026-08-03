@@ -1133,6 +1133,83 @@ ONNX_MODEL_PATH: Optional[Path] = None
 MODEL_LOAD_ERROR: Optional[str] = None
 ACTIVE_BACKEND: str = "fallback"
 
+
+def _app_env() -> str:
+    return str(os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development"))).strip().lower()
+
+
+def _strict_model_runtime_required() -> bool:
+    if str(os.getenv("LLM_STRICT_READINESS", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    return _app_env() in {"staging", "production", "prod", "live"}
+
+
+def _checkpoint_status() -> Dict[str, Any]:
+    active: Optional[Path] = None
+    try:
+        active = _resolve_active_model_path()
+    except Exception:
+        active = None
+
+    onnx: Optional[Path] = None
+    try:
+        onnx = _resolve_onnx_model_path(active)
+    except Exception:
+        onnx = None
+
+    active_exists = bool(active and active.exists())
+    onnx_exists = bool(onnx and onnx.exists())
+    return {
+        "active_model_path": str(active) if active else None,
+        "active_model_exists": active_exists,
+        "active_model_size": int(active.stat().st_size) if active_exists and active is not None else None,
+        "onnx_model_path": str(onnx) if onnx else None,
+        "onnx_model_exists": onnx_exists,
+        "onnx_model_size": int(onnx.stat().st_size) if onnx_exists and onnx is not None else None,
+    }
+
+
+def _backend_ready() -> bool:
+    if ACTIVE_BACKEND == "torch":
+        return TORCH_MODEL is not None
+    if ACTIVE_BACKEND == "onnx":
+        return ONNX_SESSION is not None
+    return False
+
+
+def _readiness_snapshot() -> Dict[str, Any]:
+    strict_required = _strict_model_runtime_required()
+    backend_ready = _backend_ready()
+    ready = backend_ready if strict_required else True
+    checkpoint = _checkpoint_status()
+    reason = None
+    if strict_required and not backend_ready:
+        reason = MODEL_LOAD_ERROR or "No canonical inference backend is active"
+    return {
+        "ready": bool(ready),
+        "strict_required": strict_required,
+        "app_env": _app_env(),
+        "backend": ACTIVE_BACKEND,
+        "backend_ready": backend_ready,
+        "model_load_error": MODEL_LOAD_ERROR,
+        "checkpoint": checkpoint,
+        "reason": reason,
+    }
+
+
+def _enforce_ready_for_inference() -> None:
+    snapshot = _readiness_snapshot()
+    if snapshot["strict_required"] and not snapshot["backend_ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Generation backend not ready",
+                "backend": snapshot["backend"],
+                "reason": snapshot["reason"],
+                "checkpoint": snapshot["checkpoint"],
+            },
+        )
+
 # ------------------------------------------------------------
 # Backend selection & load (Step 2: ONNX optional inference)
 # ------------------------------------------------------------
@@ -1304,6 +1381,7 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
         return [o if o is not None else _fallback_response(metadata={"backend": ACTIVE_BACKEND}) for o in outputs]
 
     # Backend batch inference for misses
+    _enforce_ready_for_inference()
     start = time.perf_counter()
     if ACTIVE_BACKEND == "torch" and TORCH_MODEL is not None and TORCH_AVAILABLE and torch is not None:
         x = _normalize_batch(misses)
@@ -2839,7 +2917,26 @@ def api_groove_apply_patch(payload: Dict[str, Any]):
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": API_VERSION}
+    snapshot = _readiness_snapshot()
+    return {
+        "ok": True,
+        "version": API_VERSION,
+        "backend": snapshot["backend"],
+        "ready": snapshot["ready"],
+        "strict_required": snapshot["strict_required"],
+        "app_env": snapshot["app_env"],
+        "backend_ready": snapshot["backend_ready"],
+        "model_error": snapshot["model_load_error"],
+        "checkpoint": snapshot["checkpoint"],
+    }
+
+
+@app.get("/readyz")
+def readyz():
+    snapshot = _readiness_snapshot()
+    if not snapshot["ready"]:
+        raise HTTPException(status_code=503, detail=snapshot)
+    return {"ok": True, **snapshot}
 
 
 @app.get("/api/llm/status")
