@@ -104,3 +104,7 @@ admin/data/test_download/videoplayback.wav
 # Local runtime/artifact output
 artifacts/
 
+# Strict recovery local payload artifacts
+scripts/render_payloads/
+*.render-env.local.json
+
