@@ -1413,6 +1413,8 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
     if not reqs:
         return []
 
+    _enforce_ready_for_inference()
+
     # If caching is enabled, resolve from cache first, and collect misses
     outputs: List[Optional[HumanizationResponse]] = [None] * len(reqs)
     misses_idx: List[int] = []
@@ -1438,7 +1440,6 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
         return [o if o is not None else _fallback_response(metadata={"backend": ACTIVE_BACKEND}) for o in outputs]
 
     # Backend batch inference for misses
-    _enforce_ready_for_inference()
     start = time.perf_counter()
     if ACTIVE_BACKEND == "torch" and TORCH_MODEL is not None and TORCH_AVAILABLE and torch is not None:
         x = _normalize_batch(misses)
@@ -1466,11 +1467,22 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
     return [o if o is not None else _fallback_response(metadata={"backend": ACTIVE_BACKEND}) for o in outputs]
 
 def _infer_one(req: HumanizationRequest) -> HumanizationResponse:
+    _enforce_ready_for_inference()
+
     if CACHE_ENABLED:
         tempo_b, style_i, comp_b = _cache_key(req)
         try:
             params = _cached_infer(tempo_b, style_i, comp_b)
-            return HumanizationResponse(ok=True, params=dict(params), metadata={"backend": ACTIVE_BACKEND, "cached": True})
+            return HumanizationResponse(
+                ok=True,
+                params=dict(params),
+                metadata={
+                    "backend": ACTIVE_BACKEND,
+                    "cached": True,
+                },
+            )
+        except HTTPException:
+            raise
         except Exception:
             pass
     # No cache or cache miss => use batch path for uniformity
@@ -1479,29 +1491,6 @@ def _infer_one(req: HumanizationRequest) -> HumanizationResponse:
 # ------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------
-
-@app.get("/healthz")
-def healthz():
-    return {
-        "ok": True,
-        "version": API_VERSION,
-        "backend": ACTIVE_BACKEND,
-        "torch_available": TORCH_AVAILABLE,
-        "onnx_available": ONNX_AVAILABLE,
-        "cache_enabled": CACHE_ENABLED,
-        "cache_bins": {"tempo_bpm": CACHE_TEMPO_BIN, "complexity": CACHE_COMPLEXITY_BIN},
-        "torch": {
-            "model_loaded": TORCH_MODEL is not None,
-            "device": TORCH_DEVICE,
-            "checkpoint": str(TORCH_MODEL_PATH) if TORCH_MODEL_PATH else None,
-        },
-        "onnx": {
-            "session_loaded": ONNX_SESSION is not None,
-            "model_path": str(ONNX_MODEL_PATH) if ONNX_MODEL_PATH else None,
-        },
-        "model_error": MODEL_LOAD_ERROR,
-    }
-
 
 @app.get("/health")
 def health():
@@ -1816,6 +1805,8 @@ def humanization_params_batch(req: HumanizationBatchRequest):
 
 @app.post("/v1/performance_spec", response_model=PerformanceSpecResponse)
 def performance_spec(req: PerformanceSpecRequest):
+    _enforce_ready_for_inference()
+
     cfg = req.cfg or {}
     songmap_summary = req.songmap_summary or {}
     drummer_profile = req.drummer_profile or {}
@@ -2983,8 +2974,11 @@ def healthz():
         "strict_required": snapshot["strict_required"],
         "app_env": snapshot["app_env"],
         "backend_ready": snapshot["backend_ready"],
+        "model_version": snapshot["model_version"],
+        "model_sha256_verified": snapshot["model_sha256_verified"],
         "model_error": snapshot["model_load_error"],
         "checkpoint": snapshot["checkpoint"],
+        "reason": snapshot["reason"],
     }
 
 
