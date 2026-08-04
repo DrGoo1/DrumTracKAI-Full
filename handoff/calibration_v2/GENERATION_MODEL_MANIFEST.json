@@ -1,0 +1,17 @@
+{
+  "model_version": "v1.1.17",
+  "model_family": "drum_humanization",
+  "backend": "onnx",
+  "source_location": "F:/DrumTracKAI_v1.1.17/__drumtrackai_frontend__/admin/models/production/v1.1.17/drum_humanizer/model.onnx",
+  "source_filename": "model.onnx",
+  "sha256": "83a90a498b63f294efb0ea2adc2a0f6acadd5d0c1f718811c1aef6167f435f76",
+  "size_bytes": 71127,
+  "input_shape": [1, 3],
+  "output_shape": [1, 9],
+  "strict_state_dict_load": false,
+  "finite_inference": true,
+  "validation_timestamp": "2026-08-03T20:09:50.289573+00:00",
+  "validator_commit": "bdf216d7b8c73d3e367949f255b0c32324768a9a",
+  "training_provenance": "unknown",
+  "status": "validated"
+}

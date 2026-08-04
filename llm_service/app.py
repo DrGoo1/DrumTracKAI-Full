@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import logging
 import os
 import time
@@ -1144,6 +1146,14 @@ def _strict_model_runtime_required() -> bool:
     return _app_env() in {"staging", "production", "prod", "live"}
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _checkpoint_status() -> Dict[str, Any]:
     active: Optional[Path] = None
     try:
@@ -1159,6 +1169,19 @@ def _checkpoint_status() -> Dict[str, Any]:
 
     active_exists = bool(active and active.exists())
     onnx_exists = bool(onnx and onnx.exists())
+    expected_model_sha256 = str(os.getenv("GENERATION_MODEL_SHA256", "")).strip().lower() or None
+    model_version = str(os.getenv("DRUMTRACKAI_MODEL_VERSION", "")).strip() or None
+    actual_model_sha256: Optional[str] = None
+    model_sha256_verified: Optional[bool] = None
+    if onnx_exists and onnx is not None:
+        try:
+            actual_model_sha256 = _sha256_file(onnx)
+            if expected_model_sha256:
+                model_sha256_verified = hmac.compare_digest(actual_model_sha256, expected_model_sha256)
+        except Exception:
+            actual_model_sha256 = None
+            model_sha256_verified = False if expected_model_sha256 else None
+
     return {
         "active_model_path": str(active) if active else None,
         "active_model_exists": active_exists,
@@ -1166,6 +1189,10 @@ def _checkpoint_status() -> Dict[str, Any]:
         "onnx_model_path": str(onnx) if onnx else None,
         "onnx_model_exists": onnx_exists,
         "onnx_model_size": int(onnx.stat().st_size) if onnx_exists and onnx is not None else None,
+        "expected_model_sha256": expected_model_sha256,
+        "actual_model_sha256": actual_model_sha256,
+        "model_sha256_verified": model_sha256_verified,
+        "model_version": model_version,
     }
 
 
@@ -1179,18 +1206,48 @@ def _backend_ready() -> bool:
 
 def _readiness_snapshot() -> Dict[str, Any]:
     strict_required = _strict_model_runtime_required()
-    backend_ready = _backend_ready()
-    ready = backend_ready if strict_required else True
     checkpoint = _checkpoint_status()
+
+    backend_ready = _backend_ready()
     reason = None
-    if strict_required and not backend_ready:
-        reason = MODEL_LOAD_ERROR or "No canonical inference backend is active"
+
+    if strict_required:
+        backend_ready = True
+        if ACTIVE_BACKEND != "onnx":
+            backend_ready = False
+            reason = "Strict readiness requires ACTIVE_BACKEND=onnx"
+        elif ONNX_SESSION is None:
+            backend_ready = False
+            reason = "ONNX session is not loaded"
+        elif not bool(checkpoint.get("onnx_model_exists")):
+            backend_ready = False
+            reason = "ONNX model path does not exist"
+        else:
+            expected_sha = checkpoint.get("expected_model_sha256")
+            if expected_sha and not bool(checkpoint.get("model_sha256_verified")):
+                backend_ready = False
+                reason = "ONNX model SHA-256 does not match GENERATION_MODEL_SHA256"
+
+        if backend_ready and MODEL_LOAD_ERROR:
+            err = str(MODEL_LOAD_ERROR)
+            if not err.startswith("Torch load failed"):
+                backend_ready = False
+                reason = MODEL_LOAD_ERROR
+
+        ready = bool(backend_ready)
+        if not ready and reason is None:
+            reason = MODEL_LOAD_ERROR or "No canonical inference backend is active"
+    else:
+        ready = True
+
     return {
         "ready": bool(ready),
         "strict_required": strict_required,
         "app_env": _app_env(),
         "backend": ACTIVE_BACKEND,
         "backend_ready": backend_ready,
+        "model_version": checkpoint.get("model_version"),
+        "model_sha256_verified": checkpoint.get("model_sha256_verified"),
         "model_load_error": MODEL_LOAD_ERROR,
         "checkpoint": checkpoint,
         "reason": reason,

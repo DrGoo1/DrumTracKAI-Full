@@ -27,6 +27,10 @@ param(
     [string]$AwsRegion = "<AWS_REGION>",
     [string]$AwsAccessKeyId = "",
     [string]$AwsSecretAccessKey = "",
+    [string]$GenerationAwsAccessKeyId = "",
+    [string]$GenerationAwsSecretAccessKey = "",
+    [string]$GenerationAwsRegion = "",
+    [string]$GenerationAuthProviderNote = "",
     [string]$AwsS3SignedUrlTtlSec = "900",
     [string]$CalibrationRendererVersion = "unknown",
     [string]$CalibrationRenderMaxRetries = "3",
@@ -82,6 +86,10 @@ if ($RendererCommandTemplate -match "backend\.workers\.calibration_render_worker
 $hasMountedModel = -not [string]::IsNullOrWhiteSpace($ActiveModelPath)
 $hasBootstrapModelUri = -not [string]::IsNullOrWhiteSpace($GenerationModelS3Uri)
 $hasBootstrapModelHash = -not [string]::IsNullOrWhiteSpace($GenerationModelSha256)
+$hasGenerationAccessKeyId = -not [string]::IsNullOrWhiteSpace($GenerationAwsAccessKeyId)
+$hasGenerationSecretAccessKey = -not [string]::IsNullOrWhiteSpace($GenerationAwsSecretAccessKey)
+$hasGenerationAuthProviderNote = -not [string]::IsNullOrWhiteSpace($GenerationAuthProviderNote)
+$generationRegion = if (-not [string]::IsNullOrWhiteSpace($GenerationAwsRegion)) { $GenerationAwsRegion } else { $AwsRegion }
 
 if (-not $hasMountedModel -and -not ($hasBootstrapModelUri -and $hasBootstrapModelHash)) {
     throw "Generation model configuration is incomplete. Provide ActiveModelPath (mounted model) OR both GenerationModelS3Uri and GenerationModelSha256 (bootstrap mode)."
@@ -89,6 +97,16 @@ if (-not $hasMountedModel -and -not ($hasBootstrapModelUri -and $hasBootstrapMod
 
 if (($hasBootstrapModelUri -and -not $hasBootstrapModelHash) -or (-not $hasBootstrapModelUri -and $hasBootstrapModelHash)) {
     throw "Generation bootstrap mode requires both GenerationModelS3Uri and GenerationModelSha256."
+}
+
+if (($hasGenerationAccessKeyId -and -not $hasGenerationSecretAccessKey) -or (-not $hasGenerationAccessKeyId -and $hasGenerationSecretAccessKey)) {
+    throw "Generation model-read credentials must include both GenerationAwsAccessKeyId and GenerationAwsSecretAccessKey."
+}
+
+if ($hasBootstrapModelUri -and $hasBootstrapModelHash) {
+    if (-not ($hasGenerationAccessKeyId -and $hasGenerationSecretAccessKey) -and -not $hasGenerationAuthProviderNote) {
+        throw "S3 bootstrap mode requires generation-specific AWS model-read credentials OR GenerationAuthProviderNote documenting an alternative credential provider."
+    }
 }
 
 $workerDbFingerprint = Get-DbFingerprint -Url $DatabaseUrl
@@ -110,6 +128,11 @@ if ($InferenceBackend -eq "onnx") {
 if ($hasBootstrapModelUri -and $hasBootstrapModelHash) {
     $generationVars.Add((New-EnvVarSpec -Key "GENERATION_MODEL_S3_URI" -Value $GenerationModelS3Uri))
     $generationVars.Add((New-EnvVarSpec -Key "GENERATION_MODEL_SHA256" -Value $GenerationModelSha256))
+    $generationVars.Add((New-EnvVarSpec -Key "AWS_REGION" -Value $generationRegion))
+    if ($hasGenerationAccessKeyId -and $hasGenerationSecretAccessKey) {
+        $generationVars.Add((New-EnvVarSpec -Key "AWS_ACCESS_KEY_ID" -Value $GenerationAwsAccessKeyId))
+        $generationVars.Add((New-EnvVarSpec -Key "AWS_SECRET_ACCESS_KEY" -Value $GenerationAwsSecretAccessKey))
+    }
 }
 if (-not [string]::IsNullOrWhiteSpace($CorsAllowOrigins)) {
     $generationVars.Add((New-EnvVarSpec -Key "CORS_ALLOW_ORIGINS" -Value $CorsAllowOrigins))
