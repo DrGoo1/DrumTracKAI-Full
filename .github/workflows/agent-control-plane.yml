@@ -10,8 +10,7 @@ on:
       - ".github/agents/**"
       - ".windsurf/**"
       - "docs/AI_ENGINEERING_CONTRACT.md"
-      - "docs/AGENT_EXECUTION_MATRIX.md"
-      - "docs/CROSS_REPO_DEPENDENCIES.md"
+      - "docs/GITHUB_MCP_SETUP.md"
       - "AGENTS.md"
   pull_request:
     paths:
@@ -22,8 +21,7 @@ on:
       - ".github/agents/**"
       - ".windsurf/**"
       - "docs/AI_ENGINEERING_CONTRACT.md"
-      - "docs/AGENT_EXECUTION_MATRIX.md"
-      - "docs/CROSS_REPO_DEPENDENCIES.md"
+      - "docs/GITHUB_MCP_SETUP.md"
       - "AGENTS.md"
 
 permissions:
