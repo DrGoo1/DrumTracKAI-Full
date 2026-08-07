@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studiomind.local/ai/task-1.0.0.schema.json",
+  "title": "AI Engineering Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "repository",
+    "base_branch",
+    "execution_target",
+    "preferred_agent",
+    "objective",
+    "in_scope",
+    "out_of_scope",
+    "acceptance_criteria",
+    "validation",
+    "required_evidence",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "base_branch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "branch_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "execution_target": {
+      "enum": [
+        "cloud",
+        "mac-local",
+        "pc-local",
+        "hybrid",
+        "manual"
+      ]
+    },
+    "preferred_agent": {
+      "enum": [
+        "chatgpt",
+        "codex",
+        "copilot",
+        "windsurf",
+        "human",
+        "any"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 10
+    },
+    "in_scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "validation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "local_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "data_classification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "default": "internal"
+    },
+    "status": {
+      "enum": [
+        "designed",
+        "ready",
+        "implementing",
+        "review",
+        "blocked",
+        "validated",
+        "complete"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "DTAI-EXAMPLE",
+  "repository": "DrGoo1/DrumTracKAI-Full",
+  "base_branch": "sync/render-main",
+  "branch_name": "agent/windsurf-dtai-example",
+  "execution_target": "pc-local",
+  "preferred_agent": "windsurf",
+  "objective": "Demonstrate the repository-native agent task and evidence contract.",
+  "in_scope": [
+    "Validate task, run-report, and certification example artifacts."
+  ],
+  "out_of_scope": [
+    "Product behavior changes.",
+    "Deployment or DAW/model certification."
+  ],
+  "acceptance_criteria": [
+    "All example documents validate against schema version 1.0.0.",
+    "The control-plane self-test rejects unsafe or incomplete evidence."
+  ],
+  "validation": [
+    "python tools/agentctl.py self-test",
+    "python tools/agentctl.py examples validate"
+  ],
+  "required_evidence": [
+    ".ai/examples/run-report.example.json",
+    ".ai/examples/certification-report.example.json"
+  ],
+  "dependencies": [],
+  "local_capabilities": [],
+  "data_classification": "internal",
+  "status": "ready",
+  "owner": "project-owner",
+  "created_at": "2026-08-07T00:00:00Z",
+  "notes": [
+    "Example only; copy into .ai/tasks and replace all values."
+  ]
+}

@@ -1,0 +1,109 @@
+name: Agent implementation task
+description: Define a bounded task for ChatGPT, Codex, Copilot, Windsurf, or a human engineer.
+title: "[AGENT] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is the durable source of truth for an agent task. Keep the objective,
+        scope, acceptance criteria, and evidence requirements explicit. Do not include
+        credentials, private audio, absolute local paths, or licensed content.
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      description: Stable ID such as SMAI-142 or DTAI-317.
+      placeholder: SMAI-142
+    validations:
+      required: true
+  - type: dropdown
+    id: execution_target
+    attributes:
+      label: Execution target
+      options:
+        - cloud
+        - mac-local
+        - pc-local
+        - hybrid
+        - manual
+    validations:
+      required: true
+  - type: dropdown
+    id: preferred_agent
+    attributes:
+      label: Preferred implementation agent
+      options:
+        - Codex
+        - VS Code Copilot
+        - Windsurf
+        - ChatGPT
+        - Human
+        - Any
+    validations:
+      required: true
+  - type: input
+    id: base_branch
+    attributes:
+      label: Base branch
+      placeholder: main
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the externally observable behavior to add or fix.
+    validations:
+      required: true
+  - type: textarea
+    id: in_scope
+    attributes:
+      label: In scope
+      description: One item per line.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: Name adjacent work that must not be included.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use observable pass/fail statements.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Required validation
+      description: Exact commands and any required Mac/PC/DAW/GPU certification.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required evidence
+      description: Run report, screenshots, hashes, sanitized logs, or audio review IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and blockers
+      description: Link related issues, PRs, services, contracts, and local capabilities.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety and data checks
+      options:
+        - label: The task does not require secrets or credentials in Git.
+          required: true
+        - label: Private audio, licensed content, and model checkpoints remain outside Git.
+          required: true
+        - label: Any DAW, hardware, GPU, or audio validation is explicitly identified.
+          required: true
