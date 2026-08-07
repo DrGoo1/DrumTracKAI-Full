@@ -42,7 +42,6 @@ FORBIDDEN_KEY_FRAGMENTS = (
     "refresh_token",
     "client_secret",
     "github_token",
-    "pat",
 )
 
 SCHEMA_FILES = {
