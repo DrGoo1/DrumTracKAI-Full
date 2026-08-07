@@ -54,13 +54,20 @@
       "passed": 3,
       "failed": 0,
       "skipped": 0
+    },
+    {
+      "command": "GitHub Actions: Agent control plane validation #5",
+      "result": "pass",
+      "summary": "The exact pull-request head passed schema installation, compilation, self-test, and example validation.",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
     }
   ],
   "deviations": [
     "The implementation was bootstrapped directly from the approved ChatGPT design rather than an issue that predated the new control plane."
   ],
   "known_limitations": [
-    "GitHub Actions was pending when this report was created.",
     "Windsurf and VS Code MCP authentication must be completed manually on the authorized workstations; no credentials are stored in Git.",
     "No GPU, ONNX, checkpoint, Render deployment, calibration-audio, or listening certification was required or claimed for this control-plane-only change.",
     "A cross-repository GitHub Project board and automatic agent dispatch are intentionally deferred."
@@ -71,10 +78,12 @@
     ".ai/certification-report.schema.json",
     "AGENTS.md",
     "docs/AI_ENGINEERING_CONTRACT.md",
-    "docs/GITHUB_MCP_SETUP.md"
+    "docs/GITHUB_MCP_SETUP.md",
+    "https://github.com/DrGoo1/DrumTracKAI-Full/actions/runs/31206177855"
   ],
-  "generated_at": "2026-08-07T18:15:00Z",
+  "generated_at": "2026-08-07T18:18:00Z",
   "notes": [
-    "The commit field identifies the final implementation commit before this evidence-only task/report commit."
+    "The commit field identifies the final implementation commit before the evidence-only task/report commits.",
+    "Automated validation was observed on pull request #4 before this report update."
   ]
 }
