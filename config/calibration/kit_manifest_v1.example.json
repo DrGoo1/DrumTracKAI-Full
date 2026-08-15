@@ -1,0 +1,299 @@
+{
+  "kitId": "calibration_pilot_kit_v1",
+  "name": "DrumTracKAI Calibration Pilot Kit",
+  "version": "calibration_pilot_kit_v1",
+  "mics": [
+    {
+      "id": "close",
+      "label": "Close",
+      "defaultGainDb": 0.0,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "overhead",
+      "label": "Overhead",
+      "defaultGainDb": -9.0,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "room",
+      "label": "Room",
+      "defaultGainDb": -13.0,
+      "defaultPan": 0.0
+    }
+  ],
+  "chokeGroups": {
+    "hihat": [
+      "hihat_closed",
+      "hihat_open",
+      "hihat_pedal"
+    ]
+  },
+  "articulations": {
+    "kick": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 50,
+              "roundRobin": [
+                "samples/kick/soft/close_rr01.wav",
+                "samples/kick/soft/close_rr02.wav",
+                "samples/kick/soft/close_rr03.wav"
+              ]
+            },
+            {
+              "min": 51,
+              "max": 95,
+              "roundRobin": [
+                "samples/kick/medium/close_rr01.wav",
+                "samples/kick/medium/close_rr02.wav",
+                "samples/kick/medium/close_rr03.wav"
+              ]
+            },
+            {
+              "min": 96,
+              "max": 127,
+              "roundRobin": [
+                "samples/kick/hard/close_rr01.wav",
+                "samples/kick/hard/close_rr02.wav",
+                "samples/kick/hard/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "snare_center": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 45,
+              "roundRobin": [
+                "samples/snare/center/soft/close_rr01.wav",
+                "samples/snare/center/soft/close_rr02.wav",
+                "samples/snare/center/soft/close_rr03.wav"
+              ]
+            },
+            {
+              "min": 46,
+              "max": 90,
+              "roundRobin": [
+                "samples/snare/center/medium/close_rr01.wav",
+                "samples/snare/center/medium/close_rr02.wav",
+                "samples/snare/center/medium/close_rr03.wav"
+              ]
+            },
+            {
+              "min": 91,
+              "max": 127,
+              "roundRobin": [
+                "samples/snare/center/hard/close_rr01.wav",
+                "samples/snare/center/hard/close_rr02.wav",
+                "samples/snare/center/hard/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "snare_ghost": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/snare/ghost/close_rr01.wav",
+                "samples/snare/ghost/close_rr02.wav",
+                "samples/snare/ghost/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "snare_rimshot": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/snare/rimshot/close_rr01.wav",
+                "samples/snare/rimshot/close_rr02.wav",
+                "samples/snare/rimshot/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "hihat_closed": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/hihat/closed/close_rr01.wav",
+                "samples/hihat/closed/close_rr02.wav",
+                "samples/hihat/closed/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "hihat_open": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/hihat/open/close_rr01.wav",
+                "samples/hihat/open/close_rr02.wav",
+                "samples/hihat/open/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "hihat_pedal": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/hihat/pedal/close_rr01.wav",
+                "samples/hihat/pedal/close_rr02.wav",
+                "samples/hihat/pedal/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "ride_bow": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/ride/bow/close_rr01.wav",
+                "samples/ride/bow/close_rr02.wav",
+                "samples/ride/bow/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "ride_bell": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/ride/bell/close_rr01.wav",
+                "samples/ride/bell/close_rr02.wav",
+                "samples/ride/bell/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "crash": {
+      "mics": {
+        "overhead": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/crash/overhead_rr01.wav",
+                "samples/crash/overhead_rr02.wav",
+                "samples/crash/overhead_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "tom_high": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/toms/high/close_rr01.wav",
+                "samples/toms/high/close_rr02.wav",
+                "samples/toms/high/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "tom_mid": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/toms/mid/close_rr01.wav",
+                "samples/toms/mid/close_rr02.wav",
+                "samples/toms/mid/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "tom_low": {
+      "mics": {
+        "close": {
+          "velocityLayers": [
+            {
+              "min": 1,
+              "max": 127,
+              "roundRobin": [
+                "samples/toms/low/close_rr01.wav",
+                "samples/toms/low/close_rr02.wav",
+                "samples/toms/low/close_rr03.wav"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "mixDefaults": {
+    "masterGainDb": -3.0,
+    "micGainsDb": {
+      "close": 0.0,
+      "overhead": -3.0,
+      "room": -6.0
+    }
+  }
+}
