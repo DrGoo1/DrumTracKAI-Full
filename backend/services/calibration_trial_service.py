@@ -39,7 +39,7 @@ def assign_visible_roles(assignment_seed: int) -> tuple[str, str]:
 
 
 class CalibrationDependencyError(RuntimeError):
-    """Raised when required external generation infrastructure is unavailable."""
+    """Raised when required external generation or rendering infrastructure is unavailable."""
 
 
 class CalibrationTrialService:
@@ -63,6 +63,16 @@ class CalibrationTrialService:
         mode = str(os.getenv("CALIBRATION_GENERATION_MODE", "")).strip().lower()
         return self._app_env() == "development" and mode == "inprocess"
 
+    @staticmethod
+    def _runtime_commit() -> Optional[str]:
+        value = str(
+            os.getenv("RENDER_GIT_COMMIT")
+            or os.getenv("GIT_COMMIT")
+            or os.getenv("SOURCE_VERSION")
+            or ""
+        ).strip()
+        return value or None
+
     def _require_canonical_backend(self, *, candidate: ProductionCandidate, role: str) -> None:
         metadata = candidate.metadata.get("production_metadata") if isinstance(candidate.metadata, dict) else {}
         backend_name = str((metadata or {}).get("backend") or "").strip().lower()
@@ -72,9 +82,10 @@ class CalibrationTrialService:
                 raise CalibrationDependencyError(
                     f"{role} generation is not using canonical HTTP generation mode (got '{engine_mode or 'unknown'}')"
                 )
-            if backend_name == "fallback":
+            if backend_name in {"", "fallback"}:
                 raise CalibrationDependencyError(
-                    f"{role} generation reported fallback backend in {self._app_env()} mode"
+                    f"{role} generation reported non-canonical backend '{backend_name or 'unknown'}' "
+                    f"in {self._app_env()} mode"
                 )
         elif backend_name == "fallback" and not self._fallback_allowed():
             raise CalibrationDependencyError(
@@ -82,13 +93,40 @@ class CalibrationTrialService:
                 "(APP_ENV=development with CALIBRATION_GENERATION_MODE=inprocess)"
             )
 
-    def _persist_run(self, *, trial_id: str, role: str, candidate: ProductionCandidate, request: TrialCreateInput) -> str:
+    def _persist_run(
+        self,
+        *,
+        trial_id: str,
+        role: str,
+        candidate: ProductionCandidate,
+        request: TrialCreateInput,
+    ) -> str:
+        """Persist a renderable run and enqueue it only after its events are durable.
+
+        The worker reads ``calibration_run_events`` rather than the in-memory
+        ``ProductionCandidate``.  The required ordering is therefore:
+
+        calibration_runs -> run_versions -> calibration_run_events -> render job.
+        """
+
         run_id = f"{trial_id}_{role}"
+        events = candidate.event_stream if isinstance(candidate.event_stream, list) else []
+        if not events:
+            raise RuntimeError(f"{role} candidate produced no renderable events")
+
+        candidate_metadata = candidate.metadata if isinstance(candidate.metadata, dict) else {}
+        production_metadata = (
+            candidate_metadata.get("production_metadata")
+            if isinstance(candidate_metadata.get("production_metadata"), dict)
+            else {}
+        )
+        event_stream_hash = str(candidate_metadata.get("event_stream_hash") or "").strip() or None
+
         run_meta = {
             "trial_id": trial_id,
             "role": role,
-            "engine": candidate.metadata.get("engine"),
-            "candidate_metadata": candidate.metadata,
+            "engine": candidate_metadata.get("engine"),
+            "candidate_metadata": candidate_metadata,
             "tempo_bpm": candidate.tempo_bpm,
             "time_signature": candidate.time_signature,
             "bars": candidate.bars,
@@ -96,13 +134,50 @@ class CalibrationTrialService:
             "base_groove_id": request.base_groove_id,
             "sample_pack_version": request.sample_pack_version,
             "render_profile_id": request.render_profile_id,
+            "event_count": len(events),
+            "event_stream_hash": event_stream_hash,
         }
-        self._db.log_calibration_run(
+
+        persisted_run_id = self._db.log_calibration_run(
             run_id=run_id,
             drummer_slug=request.drummer_slug,
             outcome="queued",
             metadata=run_meta,
+            note_count=len(events),
         )
+        if not persisted_run_id:
+            raise RuntimeError(f"Failed to persist calibration run {run_id}")
+
+        feature_version = str(
+            production_metadata.get("model_version")
+            or production_metadata.get("version")
+            or candidate_metadata.get("engine")
+            or "unknown"
+        )
+        version_ok = self._db.upsert_run_version(
+            run_id=run_id,
+            generator_version=str(candidate_metadata.get("engine") or "calibration_v2"),
+            feature_version=feature_version,
+            rollup_version=str(candidate_metadata.get("rollup_version") or "unknown"),
+            sample_pack_version=request.sample_pack_version,
+            seed=int(request.paired_seed),
+            commit_hash=self._runtime_commit(),
+        )
+        if not version_ok:
+            raise RuntimeError(f"Failed to persist run version for {run_id}")
+
+        events_ok = self._db.upsert_calibration_run_events(
+            run_id=run_id,
+            drummer_slug=request.drummer_slug,
+            event_stream=events,
+            source_type=str(candidate_metadata.get("engine") or "calibration_v2_production_engine"),
+            tempo_bpm=candidate.tempo_bpm,
+            time_signature=candidate.time_signature,
+            bars=candidate.bars,
+        )
+        if not events_ok:
+            raise RuntimeError(f"Failed to persist event stream for {run_id}")
+
         self._render.render_run(
             RenderRequest(
                 run_id=run_id,
@@ -115,6 +190,8 @@ class CalibrationTrialService:
                     "trial_id": trial_id,
                     "role": role,
                     "base_groove_id": request.base_groove_id,
+                    "event_count": len(events),
+                    "event_stream_hash": event_stream_hash,
                 },
             )
         )
@@ -179,9 +256,24 @@ class CalibrationTrialService:
         trial_id = f"trial_{uuid.uuid4().hex[:16]}"
 
         run_ids = {
-            "neutral": self._persist_run(trial_id=trial_id, role="neutral", candidate=neutral, request=request),
-            "control": self._persist_run(trial_id=trial_id, role="control", candidate=control, request=request),
-            "challenger": self._persist_run(trial_id=trial_id, role="challenger", candidate=challenger, request=request),
+            "neutral": self._persist_run(
+                trial_id=trial_id,
+                role="neutral",
+                candidate=neutral,
+                request=request,
+            ),
+            "control": self._persist_run(
+                trial_id=trial_id,
+                role="control",
+                candidate=control,
+                request=request,
+            ),
+            "challenger": self._persist_run(
+                trial_id=trial_id,
+                role="challenger",
+                candidate=challenger,
+                request=request,
+            ),
         }
 
         visible_a_run_id = run_ids[lane_a_role]
@@ -192,8 +284,11 @@ class CalibrationTrialService:
             target_drummer_slug=request.drummer_slug,
             app_version="calibration_v2",
         )
+        if not session_id:
+            raise RuntimeError("Failed to create calibration evaluation session")
+
         item_id = self._db.create_evaluation_item(
-            session_id=str(session_id or ""),
+            session_id=str(session_id),
             base_groove_id=request.base_groove_id,
             target_drummer_slug=request.drummer_slug,
             baseline_run_id=run_ids["neutral"],
@@ -202,17 +297,20 @@ class CalibrationTrialService:
             eval_mode="AB",
             ab_mapping={"A": lane_a_role, "B": lane_b_role},
         )
+        if not item_id:
+            raise RuntimeError("Failed to create calibration evaluation item")
 
         model_version = str(
             challenger.metadata.get("production_metadata", {}).get("model_version")
+            or challenger.metadata.get("production_metadata", {}).get("version")
             or os.getenv("DRUMTRACKAI_MODEL_VERSION", "unknown")
         )
 
-        self._repo.create_trial_record(
+        persisted_trial_id = self._repo.create_trial_record(
             {
                 "trial_id": trial_id,
-                "item_id": str(item_id or f"item_{uuid.uuid4().hex[:12]}"),
-                "session_id": str(session_id or f"sess_{uuid.uuid4().hex[:12]}"),
+                "item_id": str(item_id),
+                "session_id": str(session_id),
                 "reviewer_id": request.reviewer_id,
                 "drummer_slug": request.drummer_slug,
                 "base_groove_id": request.base_groove_id,
@@ -245,6 +343,8 @@ class CalibrationTrialService:
                 "status": "queued",
             }
         )
+        if not persisted_trial_id:
+            raise RuntimeError("Failed to create calibration trial record")
 
         return {
             "status": "queued",
