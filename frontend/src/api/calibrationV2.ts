@@ -91,6 +91,46 @@ function accessToken(session: Session): string {
   return token;
 }
 
+function resolveArtifactUrl(rawUrl: string): string {
+  const value = String(rawUrl || "").trim();
+  if (!value) return value;
+  if (/^(https?:|blob:|data:)/i.test(value)) return value;
+  const normalized = value.startsWith("/") ? value : `/${value}`;
+  return `${API_BASE.replace(/\/$/, "")}${normalized}`;
+}
+
+function normalizeArtifact(artifact: CalibrationArtifact): CalibrationArtifact {
+  return {
+    ...artifact,
+    url: resolveArtifactUrl(artifact.url),
+  };
+}
+
+function normalizeReviewerItem(item: CalibrationReviewerItem | null): CalibrationReviewerItem | null {
+  if (!item) return null;
+  return {
+    ...item,
+    lanes: {
+      neutral: (item.lanes?.neutral || []).map(normalizeArtifact),
+      A: (item.lanes?.A || []).map(normalizeArtifact),
+      B: (item.lanes?.B || []).map(normalizeArtifact),
+    },
+  };
+}
+
+function errorDetail(body: any, statusCode: number): string {
+  const detail = body?.detail || body?.message;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return `Calibration API returned HTTP ${statusCode}`;
+    }
+  }
+  return `Calibration API returned HTTP ${statusCode}`;
+}
+
 async function apiRequest<T>(
   session: Session,
   path: string,
@@ -110,8 +150,7 @@ async function apiRequest<T>(
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = body?.detail || body?.message || `Calibration API returned HTTP ${response.status}`;
-    throw new Error(String(detail));
+    throw new Error(errorDetail(body, response.status));
   }
   return body as T;
 }
@@ -139,7 +178,20 @@ export async function fetchNextReviewerItem(
     session,
     `/calibration/v2/reviewer/next${query}`,
   );
-  return response.item;
+  return normalizeReviewerItem(response.item);
+}
+
+export async function fetchReviewerItem(
+  session: Session,
+  itemId: string,
+): Promise<CalibrationReviewerItem> {
+  const response = await apiRequest<{ item: CalibrationReviewerItem }>(
+    session,
+    `/calibration/v2/reviewer/items/${encodeURIComponent(itemId)}`,
+  );
+  const normalized = normalizeReviewerItem(response.item);
+  if (!normalized) throw new Error("Calibration item response was empty");
+  return normalized;
 }
 
 export async function submitReviewerItem(
