@@ -42,7 +42,15 @@ param(
     [string]$CalibrationSampleManifestUri = "",
     [string]$CalibrationRenderOutputPrefix = "calibration/v2",
     [string]$CalibrationRenderProfileId = "calibration_standard_v2",
+    [string]$CalibrationKitId = "default_kit",
+    [string]$CalibrationDefaultBaseGrooveId = "base_groove",
+    [string]$CalibrationDefaultRepeats = "4",
+    [string]$CalibrationReviewPollSeconds = "5",
+    [string]$CalibrationMinAssimilatedSongs = "1",
+    [string]$CalibrationMinHitEvents = "1",
+    [string]$CalibrationMinProfileSections = "2",
     [bool]$CalibrationInternalReviewersEnabled = $true,
+    [bool]$CalibrationAutoQueueReviewTrials = $true,
     [string]$OutputDir = "scripts/render_payloads"
 )
 
@@ -135,6 +143,7 @@ $workerDbFingerprint = Get-DbFingerprint -Url $DatabaseUrl
 $includeAwsAccessKeyId = -not [string]::IsNullOrWhiteSpace($AwsAccessKeyId)
 $includeAwsSecretAccessKey = -not [string]::IsNullOrWhiteSpace($AwsSecretAccessKey)
 $internalReviewersValue = if ($CalibrationInternalReviewersEnabled) { "true" } else { "false" }
+$autoQueueValue = if ($CalibrationAutoQueueReviewTrials) { "true" } else { "false" }
 
 $generationVars = New-Object System.Collections.Generic.List[object]
 $generationVars.Add((New-EnvVarSpec -Key "APP_ENV" -Value $AppEnv))
@@ -168,6 +177,13 @@ $api2Vars = @(
     (New-EnvVarSpec -Key "CALIBRATION_V2_ENABLED" -Value "true"),
     (New-EnvVarSpec -Key "CALIBRATION_INTERNAL_REVIEWERS_ENABLED" -Value $internalReviewersValue),
     (New-EnvVarSpec -Key "CALIBRATION_EXTERNAL_REVIEWERS_ENABLED" -Value "false"),
+    (New-EnvVarSpec -Key "CALIBRATION_AUTO_QUEUE_REVIEW_TRIALS" -Value $autoQueueValue),
+    (New-EnvVarSpec -Key "CALIBRATION_DEFAULT_BASE_GROOVE_ID" -Value $CalibrationDefaultBaseGrooveId),
+    (New-EnvVarSpec -Key "CALIBRATION_DEFAULT_REPEATS" -Value $CalibrationDefaultRepeats),
+    (New-EnvVarSpec -Key "CALIBRATION_REVIEW_POLL_SECONDS" -Value $CalibrationReviewPollSeconds),
+    (New-EnvVarSpec -Key "CALIBRATION_MIN_ASSIMILATED_SONGS" -Value $CalibrationMinAssimilatedSongs),
+    (New-EnvVarSpec -Key "CALIBRATION_MIN_HIT_EVENTS" -Value $CalibrationMinHitEvents),
+    (New-EnvVarSpec -Key "CALIBRATION_MIN_PROFILE_SECTIONS" -Value $CalibrationMinProfileSections),
     (New-EnvVarSpec -Key "ALLOW_UNVERIFIED_JWT" -Value "false"),
     (New-EnvVarSpec -Key "DB_BACKEND" -Value "postgres"),
     (New-EnvVarSpec -Key "DATABASE_URL" -Value $DatabaseUrl),
@@ -176,6 +192,7 @@ $api2Vars = @(
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_WORKER_DB_FINGERPRINT" -Value $workerDbFingerprint),
     (New-EnvVarSpec -Key "CALIBRATION_RENDERER_VERSION" -Value $CalibrationRendererVersion),
     (New-EnvVarSpec -Key "CALIBRATION_SAMPLE_PACK_VERSION" -Value $CalibrationSamplePackVersion),
+    (New-EnvVarSpec -Key "CALIBRATION_KIT_ID" -Value $CalibrationKitId),
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_PROFILE_ID" -Value $CalibrationRenderProfileId),
     (New-EnvVarSpec -Key "SUPABASE_URL" -Value $SupabaseUrl),
     (New-EnvVarSpec -Key "SUPABASE_JWKS_URL" -Value $SupabaseJwksUrl),
@@ -242,6 +259,10 @@ $summary = @{
     renderer_version = $CalibrationRendererVersion
     sample_pack_version = $CalibrationSamplePackVersion
     internal_reviewers_enabled = $CalibrationInternalReviewersEnabled
+    auto_queue_review_trials = $CalibrationAutoQueueReviewTrials
+    min_assimilated_songs = $CalibrationMinAssimilatedSongs
+    min_hit_events = $CalibrationMinHitEvents
+    min_profile_sections = $CalibrationMinProfileSections
     generation_payload = $generationPayloadPath
     api2_payload = $api2PayloadPath
     worker_payload = $workerPayloadPath
@@ -254,4 +275,4 @@ Write-Host "  $generationPayloadPath"
 Write-Host "  $api2PayloadPath"
 Write-Host "  $workerPayloadPath"
 Write-Host "Worker DB fingerprint was computed and included in API2/worker payload files." -ForegroundColor Yellow
-Write-Host "Generated payloads use the real sample renderer contract and keep external reviewers disabled." -ForegroundColor Yellow
+Write-Host "Generated payloads expose only assimilation-ready models and keep external reviewers disabled." -ForegroundColor Yellow
