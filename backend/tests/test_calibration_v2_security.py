@@ -7,6 +7,7 @@ import pytest
 from jose import jwt
 from fastapi import HTTPException
 
+from backend import calibration_v2_api
 from backend.security.supabase_auth import verify_token
 from backend.services.calibration_profile_resolver import validate_profile_overrides
 from backend.services.calibration_trial_service import assign_visible_roles
@@ -73,6 +74,72 @@ def test_profile_treatment_overrides_are_bounded():
         )
 
 
+class _ReviewerRepo:
+    def __init__(self, roles):
+        self._roles = set(roles)
+        self.context = SimpleNamespace(
+            reviewer_id="reviewer-1",
+            auth_user_id="user-1",
+            display_name="Internal Reviewer",
+            expertise_level="professional",
+            consent_version="v1",
+            consented_at="2026-01-01T00:00:00Z",
+            is_active=True,
+        )
+
+    def require_reviewer(self, user_id):
+        assert user_id == "user-1"
+        return self.context
+
+    def roles_for_user(self, user_id):
+        assert user_id == "user-1"
+        return set(self._roles)
+
+
+def _authenticated_user():
+    return SimpleNamespace(user_id="user-1")
+
+
+def test_verified_internal_reviewer_can_access_while_external_gate_is_closed(monkeypatch):
+    monkeypatch.setenv("CALIBRATION_V2_ENABLED", "true")
+    monkeypatch.setenv("CALIBRATION_INTERNAL_REVIEWERS_ENABLED", "true")
+    monkeypatch.setenv("CALIBRATION_EXTERNAL_REVIEWERS_ENABLED", "false")
+
+    context = calibration_v2_api._require_reviewer_context(
+        user=_authenticated_user(),
+        repo=_ReviewerRepo({"internal_reviewer"}),
+    )
+
+    assert context.reviewer_id == "reviewer-1"
+
+
+def test_internal_reviewer_gate_requires_an_allowed_role(monkeypatch):
+    monkeypatch.setenv("CALIBRATION_V2_ENABLED", "true")
+    monkeypatch.setenv("CALIBRATION_INTERNAL_REVIEWERS_ENABLED", "true")
+    monkeypatch.setenv("CALIBRATION_EXTERNAL_REVIEWERS_ENABLED", "false")
+
+    with pytest.raises(HTTPException) as error:
+        calibration_v2_api._require_reviewer_context(
+            user=_authenticated_user(),
+            repo=_ReviewerRepo({"reviewer"}),
+        )
+
+    assert error.value.status_code == 503
+
+
+def test_external_gate_allows_active_reviewer_without_internal_role(monkeypatch):
+    monkeypatch.setenv("CALIBRATION_V2_ENABLED", "true")
+    monkeypatch.setenv("CALIBRATION_INTERNAL_REVIEWERS_ENABLED", "false")
+    monkeypatch.setenv("CALIBRATION_EXTERNAL_REVIEWERS_ENABLED", "true")
+
+    context = calibration_v2_api._require_reviewer_context(
+        user=_authenticated_user(),
+        repo=_ReviewerRepo(set()),
+    )
+
+    assert context.reviewer_id == "reviewer-1"
+
+
 class _WorkerDb:
     def __init__(self):
         self.status_updates = []
@@ -102,3 +169,12 @@ def test_renderer_failure_does_not_complete_job(monkeypatch):
     assert db.run_updates[-1]["outcome"] == "failure"
     assert not worker._storage_uri_allowed("C:/local/preview.wav")
     assert worker._storage_uri_allowed("s3://bucket/object.wav")
+
+
+def test_staging_also_rejects_worker_local_artifacts(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "staging")
+    worker = CalibrationRenderWorker(_WorkerDb(), command_template="unused")
+    assert not worker._storage_uri_allowed("/opt/render/project/src/artifacts/preview.wav")
+    assert not worker._storage_uri_allowed("file:///tmp/preview.wav")
+    assert worker._storage_uri_allowed("s3://bucket/object.wav")
+    assert worker._storage_uri_allowed("https://example.test/object.wav")
