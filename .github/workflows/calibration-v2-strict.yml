@@ -9,6 +9,7 @@ on:
       - "backend/services/calibration_*.py"
       - "backend/workers/calibration_render_worker.py"
       - "backend/tests/test_calibration_*.py"
+      - "backend/tests/test_publish_admin_assimilation.py"
       - "backend/tests/test_generation_readiness_bootstrap.py"
       - "backend/tests/test_production_performance_client.py"
       - "backend/tests/test_calibration_production_engine.py"
@@ -19,6 +20,7 @@ on:
       - "frontend/src/pages/CalibrationReviewer.tsx"
       - "scripts/calibration_*.py"
       - "scripts/verify_calibration_*.py"
+      - "scripts/publish_admin_assimilation_to_postgres.py"
       - "scripts/render_strict_recovery_payloads.ps1"
       - "requirements*.txt"
       - ".github/workflows/calibration-v2-strict.yml"
@@ -56,6 +58,7 @@ jobs:
         run: |
           python -m pytest \
             backend/tests/test_calibration_assimilation_service.py \
+            backend/tests/test_publish_admin_assimilation.py \
             backend/tests/test_calibration_v2_strict_paths.py \
             backend/tests/test_calibration_v2_api_payload.py \
             backend/tests/test_calibration_v2_security.py \
