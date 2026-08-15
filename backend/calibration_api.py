@@ -30,6 +30,7 @@ from jose import jwt  # type: ignore
 from backend.services.artifact_url_service import ArtifactUrlService
 from backend.services.calibration_render_service import CalibrationRenderService, RenderRequest
 from backend.services.calibration_candidate_generator import generate_candidate_run
+from backend.calibration_v2_api import router as calibration_v2_router
 from backend.app.assimilation.api.routes_drummer_generation import (
     router as assimilation_generation_router,
 )
@@ -3892,4 +3893,5 @@ async def submit_feedback(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 app.include_router(router)
+app.include_router(calibration_v2_router)
 app.include_router(assimilation_generation_router)

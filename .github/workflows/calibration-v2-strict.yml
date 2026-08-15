@@ -1,0 +1,98 @@
+name: Calibration v2 strict validation
+
+on:
+  push:
+    branches:
+      - sync/render-main
+    paths:
+      - "backend/calibration_v2_api.py"
+      - "backend/services/calibration_*.py"
+      - "backend/workers/calibration_render_worker.py"
+      - "backend/tests/test_calibration_*.py"
+      - "backend/tests/test_publish_admin_assimilation.py"
+      - "backend/tests/test_generation_readiness_bootstrap.py"
+      - "backend/tests/test_production_performance_client.py"
+      - "backend/tests/test_calibration_production_engine.py"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/src/api/calibrationV2.ts"
+      - "frontend/src/lib/supabaseClient.ts"
+      - "frontend/src/pages/CalibrationReviewer.tsx"
+      - "scripts/calibration_*.py"
+      - "scripts/verify_calibration_*.py"
+      - "scripts/publish_admin_assimilation_to_postgres.py"
+      - "scripts/render_strict_recovery_payloads.ps1"
+      - "requirements*.txt"
+      - ".github/workflows/calibration-v2-strict.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend and generation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-generation.txt pytest
+
+      - name: Compile strict runtime
+        run: python -m compileall backend scripts llm_service
+
+      - name: Run Calibration v2 strict tests
+        env:
+          APP_ENV: test
+          ALLOW_UNVERIFIED_JWT: "false"
+        run: |
+          python -m pytest \
+            backend/tests/test_calibration_assimilation_service.py \
+            backend/tests/test_publish_admin_assimilation.py \
+            backend/tests/test_calibration_v2_strict_paths.py \
+            backend/tests/test_calibration_v2_api_payload.py \
+            backend/tests/test_calibration_v2_security.py \
+            backend/tests/test_calibration_trial_readiness.py \
+            backend/tests/test_calibration_sample_renderer.py \
+            backend/tests/test_generation_readiness_bootstrap.py \
+            backend/tests/test_production_performance_client.py \
+            backend/tests/test_calibration_production_engine.py \
+            -q
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build reviewer frontend
+        env:
+          CI: "false"
+          REACT_APP_API_BASE: "https://example.invalid"
+          REACT_APP_SUPABASE_URL: "https://example.supabase.co"
+          REACT_APP_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key"
+        run: npm run build

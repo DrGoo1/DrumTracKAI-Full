@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
-from pathlib import Path
-import math
-import wave
-import struct
+from typing import Any, Dict
 import logging
-import time
+import hashlib
+import os
 from datetime import datetime
 
 from admin.services.central_database_service import CentralDatabaseService
@@ -27,59 +24,92 @@ class RenderRequest:
 
 
 class CalibrationRenderService:
-    """Minimal render service stub.
+    """Queue-backed calibration render service.
 
-    In production, this would enqueue a render job and later attach produced
-    artifacts. For the calibration API bootstrap, we simply mark the run
-    metadata to indicate a render was queued successfully so downstream flows
-    can proceed.
+    This service never synthesizes fallback audio. It enqueues durable render jobs
+    and annotates run metadata so a worker can perform real artifact generation.
     """
 
     def __init__(self, db: CentralDatabaseService) -> None:
         self._db = db
 
-    def _coerce_tempo_bpm(self, recipe: Dict[str, Any]) -> float:
-        try:
-            raw = recipe.get("tempo_bpm") if isinstance(recipe, dict) else None
-            if raw is None:
-                return 110.0
-            value = float(raw)
-            if value <= 0:
-                return 110.0
-            return value
-        except Exception:
-            return 110.0
-
-    def _await_artifact_visibility(
-        self,
-        *,
-        run_id: str,
-        retries: int = 6,
-        delay_seconds: float = 0.35,
-    ) -> list[Any]:
-        for attempt in range(max(1, retries)):
-            artifacts = self._db.get_audio_artifacts_for_run(run_id=run_id)
-            if artifacts:
-                return artifacts
-            if attempt < retries - 1:
-                time.sleep(max(0.0, delay_seconds))
-        return []
+    def _database_url_fingerprint(self) -> str:
+        database_url = str(os.getenv("DATABASE_URL") or "").strip()
+        if not database_url:
+            return ""
+        return hashlib.sha256(database_url.encode("utf-8")).hexdigest()[:16]
 
     def render_run(self, request: RenderRequest) -> None:
-        # No-op queue: annotate the run's metadata so clients can poll later.
         try:
+            run_id = str(request.run_id or "").strip()
+            if not run_id:
+                raise ValueError("render_run requires run_id")
+
+            api_db_fingerprint = self._database_url_fingerprint()
+            worker_db_fingerprint = str(os.getenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT") or "").strip()
+            database_url_match = (not api_db_fingerprint) or (not worker_db_fingerprint) or (api_db_fingerprint == worker_db_fingerprint)
+            if not database_url_match:
+                raise RuntimeError(
+                    "Database fingerprint mismatch between API and worker. "
+                    f"api={api_db_fingerprint or 'unknown'} worker={worker_db_fingerprint or 'unknown'}"
+                )
+
+            render_profile_id = str(request.render_profile_id or "").strip() or "calibration_standard_v1"
+            sample_pack_version = str(request.sample_pack_version or "").strip() or "default"
             run_ref = self._db.get_calibration_run(run_id=request.run_id)
             meta: Dict[str, Any] = {}
             if run_ref and isinstance(run_ref.metadata, dict):
                 meta = dict(run_ref.metadata)
+
+            render_meta = meta.get("render") if isinstance(meta.get("render"), dict) else {}
+            request_payload = {
+                "run_id": run_id,
+                "render_profile_id": render_profile_id,
+                "sample_pack_version": sample_pack_version,
+                "kit_id": str(request.kit_id or "default_kit"),
+                "seed": int(request.seed),
+                "render_recipe": dict(request.render_recipe or {}),
+            }
+
+            existing_job_id = str(render_meta.get("job_id") or "").strip()
+            if existing_job_id:
+                job_id = self._db.log_calibration_render_job(
+                    run_id=run_id,
+                    render_profile_id=render_profile_id,
+                    sample_pack_version=sample_pack_version,
+                    status="queued",
+                    artifact_ids=[],
+                    error_text=None,
+                    job_id=existing_job_id,
+                )
+            else:
+                job_id = self._db.log_calibration_render_job(
+                    run_id=run_id,
+                    render_profile_id=render_profile_id,
+                    sample_pack_version=sample_pack_version,
+                    status="queued",
+                    artifact_ids=[],
+                    error_text=None,
+                    job_id=f"rjob_{run_id}",
+                )
+            if not job_id:
+                raise RuntimeError(f"Unable to enqueue calibration render job for run_id={run_id}")
+
             meta.setdefault("render", {})
             meta["render"].update(
                 {
                     "status": "queued",
-                    "render_profile_id": request.render_profile_id,
-                    "sample_pack_version": request.sample_pack_version,
+                    "queued_at": datetime.utcnow().isoformat(),
+                    "render_profile_id": render_profile_id,
+                    "sample_pack_version": sample_pack_version,
                     "kit_id": request.kit_id,
                     "seed": int(request.seed),
+                    "job_id": job_id,
+                    "request": request_payload,
+                    "api_db_fingerprint": api_db_fingerprint,
+                    "worker_db_fingerprint": worker_db_fingerprint or None,
+                    "database_url_match": bool(database_url_match),
+                    "stub_mode": "queue_only_real_worker_required",
                 }
             )
             self._db.log_calibration_run(
@@ -88,145 +118,6 @@ class CalibrationRenderService:
                 metadata=meta,
                 run_id=request.run_id,
             )
-
-            # Synthesize a short preview WAV so the UI has something to play
-            # if no external render pipeline is connected yet.
-            try:
-                tempo_bpm = self._coerce_tempo_bpm(request.render_recipe)
-                preview_path = self._synthesize_preview_audio(
-                    run_id=request.run_id,
-                    tempo_bpm=tempo_bpm,
-                )
-                if preview_path is not None and preview_path.is_file():
-                    storage_uri = str(preview_path.resolve())
-                    source_analysis_id = str(request.render_recipe.get("source_analysis_id") or "").strip()
-                    source_song_name = str(request.render_recipe.get("source_song_name") or "").strip()
-                    def _log_preview_artifact(existing_artifact_id: Optional[str] = None) -> Optional[str]:
-                        return self._db.log_audio_artifact(
-                            run_id=request.run_id,
-                            artifact_type="audio",
-                            storage_uri=storage_uri,
-                            duration_sec=4.0,
-                            loudness_lufs=None,
-                            sample_pack_version=request.sample_pack_version,
-                            render_recipe={
-                                "generated": "synth_preview",
-                                "kit_id": request.kit_id,
-                                "seed": int(request.seed),
-                                "source_analysis_id": source_analysis_id or None,
-                                "source_song_name": source_song_name or None,
-                            },
-                            artifact_id=existing_artifact_id,
-                        )
-
-                    artifact_id = _log_preview_artifact()
-                    artifact_rows = self._await_artifact_visibility(run_id=request.run_id)
-
-                    if artifact_id and len(artifact_rows) == 0:
-                        _log_preview_artifact(existing_artifact_id=artifact_id)
-                        artifact_rows = self._await_artifact_visibility(
-                            run_id=request.run_id,
-                            retries=5,
-                            delay_seconds=0.4,
-                        )
-
-                    if not artifact_id:
-                        artifact_id = _log_preview_artifact()
-                        artifact_rows = self._await_artifact_visibility(
-                            run_id=request.run_id,
-                            retries=5,
-                            delay_seconds=0.4,
-                        )
-
-                    if artifact_id and len(artifact_rows) > 0:
-                        meta["render"]["status"] = "completed"
-                        meta["render"]["artifact_id"] = artifact_id
-                        meta["render"]["tempo_bpm"] = tempo_bpm
-                        meta["render"]["artifact_count"] = len(artifact_rows)
-                        self._db.log_calibration_run(
-                            drummer_slug=run_ref.drummer_slug if run_ref else "unknown",
-                            outcome="success",
-                            completed_at=datetime.utcnow(),
-                            metadata=meta,
-                            run_id=request.run_id,
-                        )
-                    else:
-                        meta["render"]["status"] = "failed"
-                        if artifact_id and len(artifact_rows) == 0:
-                            error_text = "Artifact logged but not readable back for run_id"
-                        else:
-                            error_text = "Failed to log synthesized preview artifact"
-                        meta["render"]["error"] = error_text
-                        meta["error"] = error_text
-                        self._db.log_calibration_run(
-                            drummer_slug=run_ref.drummer_slug if run_ref else "unknown",
-                            outcome="failure",
-                            completed_at=datetime.utcnow(),
-                            metadata=meta,
-                            run_id=request.run_id,
-                        )
-                else:
-                    error_text = "Failed to synthesize preview audio"
-                    meta["render"]["status"] = "failed"
-                    meta["render"]["error"] = error_text
-                    meta["error"] = error_text
-                    self._db.log_calibration_run(
-                        drummer_slug=run_ref.drummer_slug if run_ref else "unknown",
-                        outcome="failure",
-                        completed_at=datetime.utcnow(),
-                        metadata=meta,
-                        run_id=request.run_id,
-                    )
-            except Exception:
-                error_text = "render_stub_exception"
-                meta["render"]["status"] = "failed"
-                meta["render"]["error"] = error_text
-                meta["error"] = error_text
-                self._db.log_calibration_run(
-                    drummer_slug=run_ref.drummer_slug if run_ref else "unknown",
-                    outcome="failure",
-                    completed_at=datetime.utcnow(),
-                    metadata=meta,
-                    run_id=request.run_id,
-                )
-                logger.exception("render_stub_artifact_log_failed run_id=%s", request.run_id)
         except Exception:
             logger.exception("render_run_failed run_id=%s", request.run_id)
-
-    def _synthesize_preview_audio(self, *, run_id: str, tempo_bpm: float) -> Optional[Path]:
-        try:
-            root = Path(__file__).resolve().parents[2]
-            out_dir = root / "artifacts" / "calibration" / "candidates" / run_id
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / "preview.wav"
-
-            sample_rate = 44100
-            duration_sec = 4.0
-            n_frames = int(sample_rate * duration_sec)
-
-            # Simple metronome-like click with a low kick tone
-            freq_kick = 60.0  # Hz
-            click_every = max(1, int(sample_rate * (60.0 / max(1e-6, tempo_bpm))))
-
-            with wave.open(str(out_path), "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # 16-bit
-                wf.setframerate(sample_rate)
-
-                for i in range(n_frames):
-                    # Base tone (fade quickly to avoid DC)
-                    t = i / float(sample_rate)
-                    amp = 0.2 * math.exp(-t * 4.0)
-                    sample = amp * math.sin(2.0 * math.pi * freq_kick * t)
-
-                    # Add a short click every beat
-                    if i % click_every < 200:  # ~4.5 ms click
-                        sample += 0.4 * (1.0 - (i % click_every) / 200.0)
-
-                    # Clip and convert to int16
-                    sample = max(-1.0, min(1.0, sample))
-                    wf.writeframesraw(struct.pack('<h', int(sample * 32767.0)))
-
-            return out_path
-        except Exception:
-            return None
+            raise

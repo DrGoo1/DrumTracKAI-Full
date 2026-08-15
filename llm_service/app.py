@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import logging
 import os
 import time
@@ -18,7 +20,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from backend.calibration_api import router as calibration_router
 from backend.app.assimilation.api.routes_drummer_generation import router as assimilation_generation_router
-from backend.app.assimilation.api.routes_drummer_profiles import router as assimilation_profiles_router
+try:
+    from backend.app.assimilation.api.routes_drummer_profiles import router as assimilation_profiles_router
+except Exception:  # pragma: no cover - optional legacy router may be absent
+    assimilation_profiles_router = None
 
 try:
     from backend.drummerbrain.performance_spec_sentient import build_sentient_instrument_profile
@@ -1108,7 +1113,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(calibration_router)
-app.include_router(assimilation_profiles_router)
+if assimilation_profiles_router is not None:
+    app.include_router(assimilation_profiles_router)
 app.include_router(assimilation_generation_router)
 
 _CALIBRATION_ARTIFACT_DIR = (_repo_root() / "artifacts" / "calibration").resolve()
@@ -1128,6 +1134,138 @@ ONNX_MODEL_PATH: Optional[Path] = None
 
 MODEL_LOAD_ERROR: Optional[str] = None
 ACTIVE_BACKEND: str = "fallback"
+
+
+def _app_env() -> str:
+    return str(os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development"))).strip().lower()
+
+
+def _strict_model_runtime_required() -> bool:
+    if str(os.getenv("LLM_STRICT_READINESS", "")).strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    return _app_env() in {"staging", "production", "prod", "live"}
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_status() -> Dict[str, Any]:
+    active: Optional[Path] = None
+    try:
+        active = _resolve_active_model_path()
+    except Exception:
+        active = None
+
+    onnx: Optional[Path] = None
+    try:
+        onnx = _resolve_onnx_model_path(active)
+    except Exception:
+        onnx = None
+
+    active_exists = bool(active and active.exists())
+    onnx_exists = bool(onnx and onnx.exists())
+    expected_model_sha256 = str(os.getenv("GENERATION_MODEL_SHA256", "")).strip().lower() or None
+    model_version = str(os.getenv("DRUMTRACKAI_MODEL_VERSION", "")).strip() or None
+    actual_model_sha256: Optional[str] = None
+    model_sha256_verified: Optional[bool] = None
+    if onnx_exists and onnx is not None:
+        try:
+            actual_model_sha256 = _sha256_file(onnx)
+            if expected_model_sha256:
+                model_sha256_verified = hmac.compare_digest(actual_model_sha256, expected_model_sha256)
+        except Exception:
+            actual_model_sha256 = None
+            model_sha256_verified = False if expected_model_sha256 else None
+
+    return {
+        "active_model_path": str(active) if active else None,
+        "active_model_exists": active_exists,
+        "active_model_size": int(active.stat().st_size) if active_exists and active is not None else None,
+        "onnx_model_path": str(onnx) if onnx else None,
+        "onnx_model_exists": onnx_exists,
+        "onnx_model_size": int(onnx.stat().st_size) if onnx_exists and onnx is not None else None,
+        "expected_model_sha256": expected_model_sha256,
+        "actual_model_sha256": actual_model_sha256,
+        "model_sha256_verified": model_sha256_verified,
+        "model_version": model_version,
+    }
+
+
+def _backend_ready() -> bool:
+    if ACTIVE_BACKEND == "torch":
+        return TORCH_MODEL is not None
+    if ACTIVE_BACKEND == "onnx":
+        return ONNX_SESSION is not None
+    return False
+
+
+def _readiness_snapshot() -> Dict[str, Any]:
+    strict_required = _strict_model_runtime_required()
+    checkpoint = _checkpoint_status()
+
+    backend_ready = _backend_ready()
+    reason = None
+
+    if strict_required:
+        backend_ready = True
+        if ACTIVE_BACKEND != "onnx":
+            backend_ready = False
+            reason = "Strict readiness requires ACTIVE_BACKEND=onnx"
+        elif ONNX_SESSION is None:
+            backend_ready = False
+            reason = "ONNX session is not loaded"
+        elif not bool(checkpoint.get("onnx_model_exists")):
+            backend_ready = False
+            reason = "ONNX model path does not exist"
+        else:
+            expected_sha = checkpoint.get("expected_model_sha256")
+            if expected_sha and not bool(checkpoint.get("model_sha256_verified")):
+                backend_ready = False
+                reason = "ONNX model SHA-256 does not match GENERATION_MODEL_SHA256"
+
+        if backend_ready and MODEL_LOAD_ERROR:
+            err = str(MODEL_LOAD_ERROR)
+            if not err.startswith("Torch load failed"):
+                backend_ready = False
+                reason = MODEL_LOAD_ERROR
+
+        ready = bool(backend_ready)
+        if not ready and reason is None:
+            reason = MODEL_LOAD_ERROR or "No canonical inference backend is active"
+    else:
+        ready = True
+
+    return {
+        "ready": bool(ready),
+        "strict_required": strict_required,
+        "app_env": _app_env(),
+        "backend": ACTIVE_BACKEND,
+        "backend_ready": backend_ready,
+        "model_version": checkpoint.get("model_version"),
+        "model_sha256_verified": checkpoint.get("model_sha256_verified"),
+        "model_load_error": MODEL_LOAD_ERROR,
+        "checkpoint": checkpoint,
+        "reason": reason,
+    }
+
+
+def _enforce_ready_for_inference() -> None:
+    snapshot = _readiness_snapshot()
+    if snapshot["strict_required"] and not snapshot["backend_ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Generation backend not ready",
+                "backend": snapshot["backend"],
+                "reason": snapshot["reason"],
+                "checkpoint": snapshot["checkpoint"],
+            },
+        )
 
 # ------------------------------------------------------------
 # Backend selection & load (Step 2: ONNX optional inference)
@@ -1275,6 +1413,8 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
     if not reqs:
         return []
 
+    _enforce_ready_for_inference()
+
     # If caching is enabled, resolve from cache first, and collect misses
     outputs: List[Optional[HumanizationResponse]] = [None] * len(reqs)
     misses_idx: List[int] = []
@@ -1327,11 +1467,22 @@ def _infer_many(reqs: List[HumanizationRequest]) -> List[HumanizationResponse]:
     return [o if o is not None else _fallback_response(metadata={"backend": ACTIVE_BACKEND}) for o in outputs]
 
 def _infer_one(req: HumanizationRequest) -> HumanizationResponse:
+    _enforce_ready_for_inference()
+
     if CACHE_ENABLED:
         tempo_b, style_i, comp_b = _cache_key(req)
         try:
             params = _cached_infer(tempo_b, style_i, comp_b)
-            return HumanizationResponse(ok=True, params=dict(params), metadata={"backend": ACTIVE_BACKEND, "cached": True})
+            return HumanizationResponse(
+                ok=True,
+                params=dict(params),
+                metadata={
+                    "backend": ACTIVE_BACKEND,
+                    "cached": True,
+                },
+            )
+        except HTTPException:
+            raise
         except Exception:
             pass
     # No cache or cache miss => use batch path for uniformity
@@ -1340,29 +1491,6 @@ def _infer_one(req: HumanizationRequest) -> HumanizationResponse:
 # ------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------
-
-@app.get("/healthz")
-def healthz():
-    return {
-        "ok": True,
-        "version": API_VERSION,
-        "backend": ACTIVE_BACKEND,
-        "torch_available": TORCH_AVAILABLE,
-        "onnx_available": ONNX_AVAILABLE,
-        "cache_enabled": CACHE_ENABLED,
-        "cache_bins": {"tempo_bpm": CACHE_TEMPO_BIN, "complexity": CACHE_COMPLEXITY_BIN},
-        "torch": {
-            "model_loaded": TORCH_MODEL is not None,
-            "device": TORCH_DEVICE,
-            "checkpoint": str(TORCH_MODEL_PATH) if TORCH_MODEL_PATH else None,
-        },
-        "onnx": {
-            "session_loaded": ONNX_SESSION is not None,
-            "model_path": str(ONNX_MODEL_PATH) if ONNX_MODEL_PATH else None,
-        },
-        "model_error": MODEL_LOAD_ERROR,
-    }
-
 
 @app.get("/health")
 def health():
@@ -1677,6 +1805,8 @@ def humanization_params_batch(req: HumanizationBatchRequest):
 
 @app.post("/v1/performance_spec", response_model=PerformanceSpecResponse)
 def performance_spec(req: PerformanceSpecRequest):
+    _enforce_ready_for_inference()
+
     cfg = req.cfg or {}
     songmap_summary = req.songmap_summary or {}
     drummer_profile = req.drummer_profile or {}
@@ -2835,7 +2965,29 @@ def api_groove_apply_patch(payload: Dict[str, Any]):
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": API_VERSION}
+    snapshot = _readiness_snapshot()
+    return {
+        "ok": True,
+        "version": API_VERSION,
+        "backend": snapshot["backend"],
+        "ready": snapshot["ready"],
+        "strict_required": snapshot["strict_required"],
+        "app_env": snapshot["app_env"],
+        "backend_ready": snapshot["backend_ready"],
+        "model_version": snapshot["model_version"],
+        "model_sha256_verified": snapshot["model_sha256_verified"],
+        "model_error": snapshot["model_load_error"],
+        "checkpoint": snapshot["checkpoint"],
+        "reason": snapshot["reason"],
+    }
+
+
+@app.get("/readyz")
+def readyz():
+    snapshot = _readiness_snapshot()
+    if not snapshot["ready"]:
+        raise HTTPException(status_code=503, detail=snapshot)
+    return {"ok": True, **snapshot}
 
 
 @app.get("/api/llm/status")
