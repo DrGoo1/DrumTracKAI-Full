@@ -25,16 +25,43 @@ class CalibrationTrialReadinessService:
             raise RuntimeError("Calibration trial readiness requires Postgres")
 
     @staticmethod
-    def _strict_predicate() -> str:
+    def _json_array(column_sql: str) -> str:
+        """Return a TEXT/JSONB-compatible expression normalized to a JSON array."""
+
+        return (
+            "CASE "
+            f"WHEN {column_sql} IS NULL "
+            f"  OR BTRIM({column_sql}::text) IN ('', 'null') "
+            "THEN '[]'::jsonb "
+            f"ELSE {column_sql}::jsonb END"
+        )
+
+    @staticmethod
+    def _json_object(column_sql: str) -> str:
+        """Return a TEXT/JSONB-compatible expression normalized to an object."""
+
+        return (
+            "CASE "
+            f"WHEN {column_sql} IS NULL "
+            f"  OR BTRIM({column_sql}::text) IN ('', 'null') "
+            "THEN '{}'::jsonb "
+            f"ELSE {column_sql}::jsonb END"
+        )
+
+    @classmethod
+    def _strict_predicate(cls) -> str:
         # Every run must have durable events, a completed durable job and an
         # approved S3/HTTPS artifact with complete renderer provenance.
-        return """
+        events_json = cls._json_array("e.event_stream_json")
+        artifact_ids_json = cls._json_array("j.artifact_ids_json")
+        recipe_json = cls._json_object("a.render_recipe_json")
+        return f"""
             LOWER(COALESCE(
-                t.generation_metadata_json #>> '{control,production_metadata,backend}',
+                t.generation_metadata_json #>> '{{control,production_metadata,backend}}',
                 ''
             )) = 'onnx'
             AND LOWER(COALESCE(
-                t.generation_metadata_json #>> '{challenger,production_metadata,backend}',
+                t.generation_metadata_json #>> '{{challenger,production_metadata,backend}}',
                 ''
             )) = 'onnx'
             AND COALESCE(t.renderer_version, '') NOT IN ('', 'unknown')
@@ -44,22 +71,22 @@ class CalibrationTrialReadinessService:
                 SELECT 1
                 FROM public.calibration_run_events e
                 WHERE e.run_id = t.neutral_run_id
-                  AND jsonb_typeof(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) = 'array'
-                  AND jsonb_array_length(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_typeof({events_json}) = 'array'
+                  AND jsonb_array_length({events_json}) > 0
             )
             AND EXISTS (
                 SELECT 1
                 FROM public.calibration_run_events e
                 WHERE e.run_id = t.control_run_id
-                  AND jsonb_typeof(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) = 'array'
-                  AND jsonb_array_length(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_typeof({events_json}) = 'array'
+                  AND jsonb_array_length({events_json}) > 0
             )
             AND EXISTS (
                 SELECT 1
                 FROM public.calibration_run_events e
                 WHERE e.run_id = t.challenger_run_id
-                  AND jsonb_typeof(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) = 'array'
-                  AND jsonb_array_length(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_typeof({events_json}) = 'array'
+                  AND jsonb_array_length({events_json}) > 0
             )
 
             AND EXISTS (
@@ -67,21 +94,21 @@ class CalibrationTrialReadinessService:
                 FROM public.calibration_render_jobs j
                 WHERE j.run_id = t.neutral_run_id
                   AND LOWER(j.status) = 'completed'
-                  AND jsonb_array_length(COALESCE(NULLIF(j.artifact_ids_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_array_length({artifact_ids_json}) > 0
             )
             AND EXISTS (
                 SELECT 1
                 FROM public.calibration_render_jobs j
                 WHERE j.run_id = t.control_run_id
                   AND LOWER(j.status) = 'completed'
-                  AND jsonb_array_length(COALESCE(NULLIF(j.artifact_ids_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_array_length({artifact_ids_json}) > 0
             )
             AND EXISTS (
                 SELECT 1
                 FROM public.calibration_render_jobs j
                 WHERE j.run_id = t.challenger_run_id
                   AND LOWER(j.status) = 'completed'
-                  AND jsonb_array_length(COALESCE(NULLIF(j.artifact_ids_json, ''), '[]')::jsonb) > 0
+                  AND jsonb_array_length({artifact_ids_json}) > 0
             )
 
             AND EXISTS (
@@ -90,11 +117,11 @@ class CalibrationTrialReadinessService:
                 WHERE a.run_id = t.neutral_run_id
                   AND (a.storage_uri LIKE 's3://%' OR a.storage_uri LIKE 'https://%')
                   AND COALESCE(a.sample_pack_version, '') = COALESCE(t.sample_pack_version, '')
-                  AND COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer_version' = t.renderer_version
-                  AND COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'sha256', '') <> ''
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'diagnostic_only', 'false'))
+                  AND {recipe_json} ->> 'renderer_version' = t.renderer_version
+                  AND COALESCE({recipe_json} ->> 'sha256', '') <> ''
+                  AND LOWER(COALESCE({recipe_json} ->> 'diagnostic_only', 'false'))
                       NOT IN ('true', '1', 'yes')
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer', ''))
+                  AND LOWER(COALESCE({recipe_json} ->> 'renderer', ''))
                       NOT LIKE '%procedural%'
             )
             AND EXISTS (
@@ -103,11 +130,11 @@ class CalibrationTrialReadinessService:
                 WHERE a.run_id = t.visible_a_run_id
                   AND (a.storage_uri LIKE 's3://%' OR a.storage_uri LIKE 'https://%')
                   AND COALESCE(a.sample_pack_version, '') = COALESCE(t.sample_pack_version, '')
-                  AND COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer_version' = t.renderer_version
-                  AND COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'sha256', '') <> ''
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'diagnostic_only', 'false'))
+                  AND {recipe_json} ->> 'renderer_version' = t.renderer_version
+                  AND COALESCE({recipe_json} ->> 'sha256', '') <> ''
+                  AND LOWER(COALESCE({recipe_json} ->> 'diagnostic_only', 'false'))
                       NOT IN ('true', '1', 'yes')
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer', ''))
+                  AND LOWER(COALESCE({recipe_json} ->> 'renderer', ''))
                       NOT LIKE '%procedural%'
             )
             AND EXISTS (
@@ -116,11 +143,11 @@ class CalibrationTrialReadinessService:
                 WHERE a.run_id = t.visible_b_run_id
                   AND (a.storage_uri LIKE 's3://%' OR a.storage_uri LIKE 'https://%')
                   AND COALESCE(a.sample_pack_version, '') = COALESCE(t.sample_pack_version, '')
-                  AND COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer_version' = t.renderer_version
-                  AND COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'sha256', '') <> ''
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'diagnostic_only', 'false'))
+                  AND {recipe_json} ->> 'renderer_version' = t.renderer_version
+                  AND COALESCE({recipe_json} ->> 'sha256', '') <> ''
+                  AND LOWER(COALESCE({recipe_json} ->> 'diagnostic_only', 'false'))
                       NOT IN ('true', '1', 'yes')
-                  AND LOWER(COALESCE(COALESCE(NULLIF(a.render_recipe_json, ''), '{}')::jsonb ->> 'renderer', ''))
+                  AND LOWER(COALESCE({recipe_json} ->> 'renderer', ''))
                       NOT LIKE '%procedural%'
             )
         """
@@ -177,10 +204,13 @@ class CalibrationTrialReadinessService:
         trial = str(trial_id or "").strip()
         if not trial:
             raise ValueError("trial_id is required")
+        events_json = self._json_array("e.event_stream_json")
+        artifact_ids_json = self._json_array("j.artifact_ids_json")
+        recipe_json = self._json_object("a.render_recipe_json")
         with self._engine.connect() as conn:
             row = conn.execute(
                 text(
-                    """
+                    f"""
                     SELECT
                         t.trial_id,
                         t.status,
@@ -191,26 +221,44 @@ class CalibrationTrialReadinessService:
                         t.visible_b_run_id,
                         t.renderer_version,
                         t.sample_pack_version,
-                        t.generation_metadata_json #>> '{control,production_metadata,backend}' AS control_backend,
-                        t.generation_metadata_json #>> '{challenger,production_metadata,backend}' AS challenger_backend,
+                        t.generation_metadata_json #>> '{{control,production_metadata,backend}}' AS control_backend,
+                        t.generation_metadata_json #>> '{{challenger,production_metadata,backend}}' AS challenger_backend,
                         (
                             SELECT COUNT(*)
                             FROM public.calibration_run_events e
-                            WHERE e.run_id IN (t.neutral_run_id, t.control_run_id, t.challenger_run_id)
-                              AND jsonb_array_length(COALESCE(NULLIF(e.event_stream_json, ''), '[]')::jsonb) > 0
+                            WHERE e.run_id IN (
+                                t.neutral_run_id,
+                                t.control_run_id,
+                                t.challenger_run_id
+                            )
+                              AND jsonb_typeof({events_json}) = 'array'
+                              AND jsonb_array_length({events_json}) > 0
                         ) AS populated_event_streams,
                         (
                             SELECT COUNT(*)
                             FROM public.calibration_render_jobs j
-                            WHERE j.run_id IN (t.neutral_run_id, t.control_run_id, t.challenger_run_id)
+                            WHERE j.run_id IN (
+                                t.neutral_run_id,
+                                t.control_run_id,
+                                t.challenger_run_id
+                            )
                               AND LOWER(j.status) = 'completed'
+                              AND jsonb_array_length({artifact_ids_json}) > 0
                         ) AS completed_jobs,
                         (
                             SELECT COUNT(*)
                             FROM public.audio_artifacts a
-                            WHERE a.run_id IN (t.neutral_run_id, t.visible_a_run_id, t.visible_b_run_id)
+                            WHERE a.run_id IN (
+                                t.neutral_run_id,
+                                t.visible_a_run_id,
+                                t.visible_b_run_id
+                            )
                               AND (a.storage_uri LIKE 's3://%' OR a.storage_uri LIKE 'https://%')
-                        ) AS durable_artifacts
+                              AND COALESCE({recipe_json} ->> 'sha256', '') <> ''
+                              AND LOWER(COALESCE({recipe_json} ->> 'diagnostic_only', 'false'))
+                                  NOT IN ('true', '1', 'yes')
+                        ) AS durable_artifacts,
+                        ({self._strict_predicate()}) AS strict_ready
                     FROM public.calibration_trials t
                     WHERE t.trial_id = :trial_id
                     LIMIT 1
