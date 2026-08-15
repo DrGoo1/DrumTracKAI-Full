@@ -7,7 +7,8 @@ import {
   ReviewChoice,
   ReviewerDrummer,
   ReviewerIdentity,
-  fetchNextReviewerItem,
+  ReviewerNextState,
+  fetchNextReviewerState,
   fetchReviewerDrummers,
   fetchReviewerIdentity,
   submitReviewerItem,
@@ -186,6 +187,7 @@ export default function CalibrationReviewer() {
   const [drummers, setDrummers] = useState<ReviewerDrummer[]>([]);
   const [selectedDrummer, setSelectedDrummer] = useState("");
   const [item, setItem] = useState<CalibrationReviewerItem | null>(null);
+  const [nextState, setNextState] = useState<ReviewerNextState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -207,6 +209,7 @@ export default function CalibrationReviewer() {
     B: 0,
   });
   const [idempotencyKey, setIdempotencyKey] = useState("");
+  const pollTimer = useRef<number | null>(null);
 
   const resetReview = useCallback((nextItem: CalibrationReviewerItem | null) => {
     setItem(nextItem);
@@ -222,6 +225,20 @@ export default function CalibrationReviewer() {
     setIdempotencyKey(nextItem ? makeIdempotencyKey(nextItem.item_id) : "");
   }, []);
 
+  const clearPoll = useCallback(() => {
+    if (pollTimer.current !== null) {
+      window.clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  const applyNextState = useCallback((state: ReviewerNextState) => {
+    setNextState(state);
+    resetReview(state.item);
+  }, [resetReview]);
+
+  useEffect(() => clearPoll, [clearPoll]);
+
   useEffect(() => {
     if (!supabase) return undefined;
     let active = true;
@@ -231,8 +248,11 @@ export default function CalibrationReviewer() {
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (!nextSession) {
+        clearPoll();
         setIdentity(null);
         setDrummers([]);
+        setSelectedDrummer("");
+        setNextState(null);
         resetReview(null);
       }
     });
@@ -240,7 +260,36 @@ export default function CalibrationReviewer() {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [resetReview]);
+  }, [clearPoll, resetReview]);
+
+  const loadForDrummer = useCallback(async (
+    currentSession: Session,
+    drummerSlug: string,
+    quiet = false,
+  ) => {
+    if (!drummerSlug) {
+      applyNextState({
+        item: null,
+        status: "none",
+        trial_id: null,
+        message: "No assimilated drummer model is selected.",
+        retry_after_seconds: 0,
+      });
+      return;
+    }
+    if (!quiet) setBusy(true);
+    setError("");
+    try {
+      const state = await fetchNextReviewerState(currentSession, drummerSlug);
+      applyNextState(state);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : String(requestError));
+      setNextState(null);
+      resetReview(null);
+    } finally {
+      if (!quiet) setBusy(false);
+    }
+  }, [applyNextState, resetReview]);
 
   const loadReviewerContext = useCallback(async (currentSession: Session) => {
     setBusy(true);
@@ -254,33 +303,50 @@ export default function CalibrationReviewer() {
       setDrummers(availableDrummers);
       const initialSlug = availableDrummers[0]?.drummer_slug || "";
       setSelectedDrummer(initialSlug);
-      const next = await fetchNextReviewerItem(currentSession, initialSlug || undefined);
-      resetReview(next);
+      if (initialSlug) {
+        const state = await fetchNextReviewerState(currentSession, initialSlug);
+        applyNextState(state);
+      } else {
+        applyNextState({
+          item: null,
+          status: "none",
+          trial_id: null,
+          message: "No assimilation-ready drummer models are currently available.",
+          retry_after_seconds: 0,
+        });
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));
     } finally {
       setBusy(false);
     }
-  }, [resetReview]);
+  }, [applyNextState]);
 
   useEffect(() => {
     if (session) void loadReviewerContext(session);
   }, [session, loadReviewerContext]);
 
+  useEffect(() => {
+    clearPoll();
+    if (!session || !selectedDrummer || item) return undefined;
+    if (!nextState || !["preparing", "queued"].includes(nextState.status)) return undefined;
+    const delayMs = Math.max(2, nextState.retry_after_seconds || 5) * 1000;
+    pollTimer.current = window.setTimeout(() => {
+      void loadForDrummer(session, selectedDrummer, true);
+    }, delayMs);
+    return clearPoll;
+  }, [clearPoll, item, loadForDrummer, nextState, selectedDrummer, session]);
+
   const loadNext = useCallback(async () => {
     if (!session) return;
-    setBusy(true);
-    setError("");
     setSuccess("");
-    try {
-      const next = await fetchNextReviewerItem(session, selectedDrummer || undefined);
-      resetReview(next);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : String(requestError));
-    } finally {
-      setBusy(false);
-    }
-  }, [resetReview, selectedDrummer, session]);
+    await loadForDrummer(session, selectedDrummer, false);
+  }, [loadForDrummer, selectedDrummer, session]);
+
+  const selectedModel = useMemo(
+    () => drummers.find((drummer) => drummer.drummer_slug === selectedDrummer) || null,
+    [drummers, selectedDrummer],
+  );
 
   const minimumMs = (item?.rubric.minimum_listening_seconds_per_candidate || 10) * 1000;
   const normalReviewReady = Boolean(
@@ -344,8 +410,8 @@ export default function CalibrationReviewer() {
         idempotencyKey,
       );
       setSuccess("Review saved. Loading the next blinded comparison.");
-      const next = await fetchNextReviewerItem(session, selectedDrummer || undefined);
-      resetReview(next);
+      const state = await fetchNextReviewerState(session, selectedDrummer || undefined);
+      applyNextState(state);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : String(requestError));
     } finally {
@@ -414,28 +480,49 @@ export default function CalibrationReviewer() {
       <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-64 flex-1 text-sm text-slate-200">
-            Drummer model
+            Assimilated drummer model
             <select
               className="mt-1 w-full rounded-md border border-slate-600 bg-slate-950 px-3 py-2 text-white"
               value={selectedDrummer}
-              onChange={(event) => setSelectedDrummer(event.target.value)}
+              disabled={busy || drummers.length === 0}
+              onChange={(event) => {
+                const slug = event.target.value;
+                clearPoll();
+                setSelectedDrummer(slug);
+                setNextState(null);
+                resetReview(null);
+                if (session && slug) void loadForDrummer(session, slug, false);
+              }}
             >
+              {drummers.length === 0 && <option value="">No models available</option>}
               {drummers.map((drummer) => (
                 <option key={drummer.drummer_slug} value={drummer.drummer_slug}>
-                  {drummer.display_name} ({drummer.ready_trial_count} ready)
+                  {drummer.display_name} · {drummer.source_song_count} songs · {drummer.assimilation_score}% assimilated
+                  {drummer.ready_trial_count > 0 ? ` · ${drummer.ready_trial_count} ready` : ""}
+                  {drummer.queued_trial_count > 0 ? ` · ${drummer.queued_trial_count} preparing` : ""}
                 </option>
               ))}
             </select>
           </label>
           <button
             className="rounded-md bg-slate-700 px-4 py-2 text-sm font-semibold hover:bg-slate-600 disabled:opacity-50"
-            disabled={busy}
+            disabled={busy || !selectedDrummer}
             onClick={() => void loadNext()}
             type="button"
           >
-            Load next comparison
+            Load or prepare comparison
           </button>
         </div>
+        {selectedModel && (
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-400">
+            <span>{selectedModel.source_song_count} analyzed signature songs</span>
+            <span>{selectedModel.assimilation_score}% assimilation score</span>
+            {selectedModel.rollup_version && <span>Profile {selectedModel.rollup_version}</span>}
+            <span>
+              {selectedModel.ready_trial_count} ready · {selectedModel.queued_trial_count} preparing
+            </span>
+          </div>
+        )}
       </section>
 
       {error && <p className="mt-4 rounded-lg border border-red-700 bg-red-950/60 p-3 text-red-100">{error}</p>}
@@ -443,7 +530,21 @@ export default function CalibrationReviewer() {
 
       {!item ? (
         <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900 p-8 text-center text-slate-300">
-          {busy ? "Loading a comparison…" : "No rendered comparisons are currently assigned."}
+          {busy ? (
+            "Checking the assimilated drummer model…"
+          ) : ["preparing", "queued"].includes(nextState?.status || "") ? (
+            <div>
+              <p className="font-medium text-cyan-200">Preparing a new blinded comparison…</p>
+              <p className="mt-2 text-sm text-slate-400">
+                DrumTracKAI is applying the personality extracted from the drummer&apos;s signature-song analyses and rendering neutral, A, and B through the same playback chain.
+              </p>
+              {nextState?.trial_id && (
+                <p className="mt-2 text-xs text-slate-500">Trial {nextState.trial_id}</p>
+              )}
+            </div>
+          ) : (
+            nextState?.message || "No rendered comparisons are currently assigned."
+          )}
         </section>
       ) : (
         <>
