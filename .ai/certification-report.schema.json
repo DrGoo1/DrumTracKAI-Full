@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.studiomind.local/ai/certification-report-1.0.0.schema.json",
+  "title": "Local Capability Certification Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "repository",
+    "machine_id",
+    "execution_target",
+    "os",
+    "suite",
+    "status",
+    "tests",
+    "artifact_hashes",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "machine_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "execution_target": {
+      "enum": [
+        "mac-local",
+        "pc-local",
+        "hybrid",
+        "manual"
+      ]
+    },
+    "os": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suite": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "partial",
+        "blocked"
+      ]
+    },
+    "tests": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "enum": [
+          "pass",
+          "fail",
+          "not_supported",
+          "skipped",
+          "blocked"
+        ]
+      }
+    },
+    "artifact_hashes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "sanitized_log": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

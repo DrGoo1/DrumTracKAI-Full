@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "DTAI-ACP-1",
+  "repository": "DrGoo1/DrumTracKAI-Full",
+  "base_branch": "sync/render-main",
+  "branch_name": "agent/chatgpt-ai-control-plane-v1",
+  "execution_target": "hybrid",
+  "preferred_agent": "chatgpt",
+  "objective": "Establish GitHub as the durable coordination plane between ChatGPT, Windsurf, VS Code Copilot, PC/GPU certification, deployment evidence, and human review.",
+  "in_scope": [
+    "Add versioned task, run-report, and local-certification schemas with validated examples.",
+    "Add a standard-library control-plane CLI for validation, report creation, branch planning, PR-body generation, and deterministic self-tests.",
+    "Add GitHub issue, pull-request, custom-agent, and Actions integration.",
+    "Add DrumTracKAI-specific fail-closed agent rules for generation, model readiness, artifacts, calibration, and deployment evidence.",
+    "Add Windsurf rules and workflows that read GitHub tasks and PR feedback directly.",
+    "Document secure GitHub MCP setup for the DrumTracKAI PC and studio Mac.",
+    "Document StudioMind and DrumTracKAI execution lanes and cross-repository authority boundaries."
+  ],
+  "out_of_scope": [
+    "Installing or authenticating MCP on the user's local machines.",
+    "Changing DrumTracKAI generation, calibration, database, frontend, model, artifact, or deployment behavior.",
+    "Creating a GitHub Project board or modifying repository protection settings.",
+    "Granting credentials, GPU/deployment access, repository permissions, or autonomous merge authority."
+  ],
+  "acceptance_criteria": [
+    "All control-plane examples validate against schema version 1.0.0.",
+    "The self-test rejects a task that targets main and a completed report without a full commit SHA.",
+    "GitHub Actions validates the control-plane utility and examples on push and pull request changes.",
+    "Windsurf and Copilot agents follow the issue, run-report, draft-PR, direct-review-comment, and local-certification workflow.",
+    "DrumTracKAI agent instructions require explicit failure or degraded states instead of silent model, transformer, renderer, or artifact fallback.",
+    "The repository contains current secure setup instructions for GitHub MCP in Windsurf and VS Code.",
+    "No credentials, private audio, licensed content, checkpoints, absolute workstation paths, or product runtime changes are introduced."
+  ],
+  "validation": [
+    "python -m py_compile tools/agentctl.py",
+    "python tools/agentctl.py self-test",
+    "python tools/agentctl.py examples validate",
+    "GitHub Actions: Agent control plane validation"
+  ],
+  "required_evidence": [
+    ".ai/run-reports/DTAI-ACP-1.json",
+    "GitHub Actions checks on the draft pull request",
+    "Pull-request diff against sync/render-main"
+  ],
+  "dependencies": [
+    "GitHub App write access to DrGoo1/DrumTracKAI-Full",
+    "Manual OAuth or fine-grained credential authorization on each local IDE"
+  ],
+  "local_capabilities": [
+    "Windsurf and GitHub MCP on the PC after manual setup",
+    "VS Code Copilot and GitHub MCP on the studio Mac after manual setup"
+  ],
+  "data_classification": "internal",
+  "status": "review",
+  "owner": "DrGoo1",
+  "created_at": "2026-08-07T18:15:00Z",
+  "notes": [
+    "Bootstrap task created with the control plane it installs.",
+    "The active integration base is sync/render-main rather than stale main.",
+    "The PR remains draft until automated checks are observed."
+  ]
+}

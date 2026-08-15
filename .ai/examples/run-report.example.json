@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "DTAI-EXAMPLE",
+  "repository": "DrGoo1/DrumTracKAI-Full",
+  "status": "partial",
+  "branch": "agent/windsurf-dtai-example",
+  "commit": null,
+  "agent": "windsurf",
+  "changed_files": [
+    ".ai/examples/task.example.json"
+  ],
+  "tests": [
+    {
+      "command": "python tools/agentctl.py examples validate",
+      "result": "pass",
+      "summary": "Example documents validate.",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "deviations": [],
+  "known_limitations": [
+    "Example report is not tied to a real commit."
+  ],
+  "artifacts": [
+    ".ai/examples/certification-report.example.json"
+  ],
+  "generated_at": "2026-08-07T00:00:00Z",
+  "notes": [
+    "Example only."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "DTAI-EXAMPLE",
+  "repository": "DrGoo1/DrumTracKAI-Full",
+  "machine_id": "authorized-local-runner",
+  "execution_target": "pc-local",
+  "os": "example-os",
+  "suite": "control-plane-example",
+  "status": "pass",
+  "tests": {
+    "schema_validation": "pass",
+    "private_asset_upload": "not_supported"
+  },
+  "artifact_hashes": [
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "sanitized_log": ".ai/examples/certification.log.example",
+  "generated_at": "2026-08-07T00:00:00Z",
+  "notes": [
+    "Example only; never include private machine details or secrets."
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "DTAI-ACP-1",
+  "repository": "DrGoo1/DrumTracKAI-Full",
+  "status": "completed",
+  "branch": "agent/chatgpt-ai-control-plane-v1",
+  "commit": "d771b36e7d0e724de9e44d36a6944c7be094d266",
+  "agent": "chatgpt",
+  "changed_files": [
+    ".ai/certification-report.schema.json",
+    ".ai/examples/certification-report.example.json",
+    ".ai/examples/certification.log.example",
+    ".ai/examples/run-report.example.json",
+    ".ai/examples/task.example.json",
+    ".ai/run-report.schema.json",
+    ".ai/task.schema.json",
+    ".ai/tasks/DTAI-ACP-1.json",
+    ".ai/run-reports/DTAI-ACP-1.json",
+    ".github/ISSUE_TEMPLATE/agent-task.yml",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/agents/control-plane-reviewer.agent.md",
+    ".github/agents/drumtrackai-engineer.agent.md",
+    ".github/agents/issue-implementation.agent.md",
+    ".github/copilot-instructions.md",
+    ".github/workflows/agent-control-plane.yml",
+    ".windsurf/rules/repository.md",
+    ".windsurf/workflows/agent-task.md",
+    "AGENTS.md",
+    "docs/AI_ENGINEERING_CONTRACT.md",
+    "docs/GITHUB_MCP_SETUP.md",
+    "tools/agentctl.py"
+  ],
+  "tests": [
+    {
+      "command": "python -m py_compile tools/agentctl.py",
+      "result": "pass",
+      "summary": "The control-plane CLI compiled successfully in the generated validation tree.",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python tools/agentctl.py self-test",
+      "result": "pass",
+      "summary": "Examples passed and negative tests rejected an unsafe main-branch task and an incomplete completed report.",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python tools/agentctl.py examples validate",
+      "result": "pass",
+      "summary": "Task, run-report, and certification examples validated.",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "GitHub Actions: Agent control plane validation #5",
+      "result": "pass",
+      "summary": "The exact pull-request head passed schema installation, compilation, self-test, and example validation.",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "deviations": [
+    "The implementation was bootstrapped directly from the approved ChatGPT design rather than an issue that predated the new control plane."
+  ],
+  "known_limitations": [
+    "Windsurf and VS Code MCP authentication must be completed manually on the authorized workstations; no credentials are stored in Git.",
+    "No GPU, ONNX, checkpoint, Render deployment, calibration-audio, or listening certification was required or claimed for this control-plane-only change.",
+    "A cross-repository GitHub Project board and automatic agent dispatch are intentionally deferred."
+  ],
+  "artifacts": [
+    ".ai/task.schema.json",
+    ".ai/run-report.schema.json",
+    ".ai/certification-report.schema.json",
+    "AGENTS.md",
+    "docs/AI_ENGINEERING_CONTRACT.md",
+    "docs/GITHUB_MCP_SETUP.md",
+    "https://github.com/DrGoo1/DrumTracKAI-Full/actions/runs/31206177855"
+  ],
+  "generated_at": "2026-08-07T18:18:00Z",
+  "notes": [
+    "The commit field identifies the final implementation commit before the evidence-only task/report commits.",
+    "Automated validation was observed on pull request #4 before this report update."
+  ]
+}
