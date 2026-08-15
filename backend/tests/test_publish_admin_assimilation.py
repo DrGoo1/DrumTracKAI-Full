@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -11,6 +12,9 @@ def _load_module():
     spec = importlib.util.spec_from_file_location("publish_admin_assimilation_to_postgres", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # dataclasses resolves postponed annotations through sys.modules while the
+    # dynamically loaded module is executing.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
