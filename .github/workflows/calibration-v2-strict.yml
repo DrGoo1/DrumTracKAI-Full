@@ -18,6 +18,7 @@ on:
       - "frontend/src/lib/supabaseClient.ts"
       - "frontend/src/pages/CalibrationReviewer.tsx"
       - "scripts/calibration_*.py"
+      - "scripts/verify_calibration_*.py"
       - "scripts/render_strict_recovery_payloads.ps1"
       - "requirements*.txt"
       - ".github/workflows/calibration-v2-strict.yml"
@@ -54,6 +55,7 @@ jobs:
           ALLOW_UNVERIFIED_JWT: "false"
         run: |
           python -m pytest \
+            backend/tests/test_calibration_assimilation_service.py \
             backend/tests/test_calibration_v2_strict_paths.py \
             backend/tests/test_calibration_v2_api_payload.py \
             backend/tests/test_calibration_v2_security.py \
