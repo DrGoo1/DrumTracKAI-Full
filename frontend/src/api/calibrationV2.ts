@@ -58,6 +58,21 @@ export interface ReviewerDrummer {
   drummer_slug: string;
   display_name: string;
   ready_trial_count: number;
+  queued_trial_count: number;
+  model_ready: boolean;
+  can_queue_trial: boolean;
+  source_song_count: number;
+  assimilation_score: number;
+  rollup_version?: string | null;
+  blockers: string[];
+}
+
+export interface ReviewerNextState {
+  item: CalibrationReviewerItem | null;
+  status: "ready" | "preparing" | "queued" | "none" | string;
+  trial_id?: string | null;
+  message?: string | null;
+  retry_after_seconds: number;
 }
 
 export interface ReviewerSubmission {
@@ -167,18 +182,29 @@ export async function fetchReviewerDrummers(session: Session): Promise<ReviewerD
   return response.items || [];
 }
 
+export async function fetchNextReviewerState(
+  session: Session,
+  targetDrummerSlug?: string,
+): Promise<ReviewerNextState> {
+  const query = targetDrummerSlug
+    ? `?target_drummer_slug=${encodeURIComponent(targetDrummerSlug)}`
+    : "";
+  const response = await apiRequest<ReviewerNextState>(
+    session,
+    `/calibration/v2/reviewer/next${query}`,
+  );
+  return {
+    ...response,
+    item: normalizeReviewerItem(response.item),
+    retry_after_seconds: Math.max(0, Number(response.retry_after_seconds || 0)),
+  };
+}
+
 export async function fetchNextReviewerItem(
   session: Session,
   targetDrummerSlug?: string,
 ): Promise<CalibrationReviewerItem | null> {
-  const query = targetDrummerSlug
-    ? `?target_drummer_slug=${encodeURIComponent(targetDrummerSlug)}`
-    : "";
-  const response = await apiRequest<{ item: CalibrationReviewerItem | null }>(
-    session,
-    `/calibration/v2/reviewer/next${query}`,
-  );
-  return normalizeReviewerItem(response.item);
+  return (await fetchNextReviewerState(session, targetDrummerSlug)).item;
 }
 
 export async function fetchReviewerItem(
