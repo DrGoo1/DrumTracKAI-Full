@@ -103,9 +103,30 @@ def _require_reviewer_context(
     user: AuthenticatedUser = Depends(require_authenticated_user),
     repo: CalibrationV2Repository = Depends(_repository),
 ):
-    _require_external_reviewers_enabled()
+    """Authorize public reviewers or explicitly enabled internal pilot reviewers.
+
+    ``ALLOW_UNVERIFIED_JWT`` is deliberately not consulted here. Authentication
+    must already have succeeded through ``require_authenticated_user``.
+    """
+
+    _require_v2_enabled()
     try:
-        return repo.require_reviewer(user.user_id)
+        reviewer = repo.require_reviewer(user.user_id)
+
+        if _env_bool("CALIBRATION_EXTERNAL_REVIEWERS_ENABLED", default=False):
+            return reviewer
+
+        if _env_bool("CALIBRATION_INTERNAL_REVIEWERS_ENABLED", default=False):
+            roles = repo.roles_for_user(user.user_id)
+            if roles.intersection({"admin", "research_admin", "internal_reviewer"}):
+                return reviewer
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="External calibration review is not open",
+        )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _http_error(exc) from exc
 
@@ -191,9 +212,15 @@ def _serialize_artifact(artifact: Any) -> Optional[Dict[str, Any]]:
     if not url:
         return None
     return {
-        "artifact_type": "audio",
+        "artifact_id": str(getattr(artifact, "artifact_id", "") or ""),
+        "artifact_type": str(
+            getattr(artifact, "artifact_type", "candidate_audio")
+            or "candidate_audio"
+        ),
         "url": url,
         "duration_sec": getattr(artifact, "duration_sec", None),
+        "loudness_lufs": getattr(artifact, "loudness_lufs", None),
+        "sample_pack_version": getattr(artifact, "sample_pack_version", None),
     }
 
 
@@ -217,6 +244,9 @@ def _reviewer_item_payload(
     # Never include ab_mapping_json or calibration_trials.assignment_json here.
     return {
         "item_id": str(row["item_id"]),
+        "session_id": str(row["session_id"]),
+        "trial_id": str(row["trial_id"]),
+        "base_groove_id": str(row["base_groove_id"]),
         "target_drummer_slug": str(row["target_drummer_slug"]),
         "target_drummer_display_name": repo.drummer_display_name(str(row["target_drummer_slug"])),
         "eval_mode": "AB",
@@ -242,6 +272,9 @@ def v2_health() -> Dict[str, Any]:
         "status": "ok",
         "version": "calibration_v2",
         "enabled": _env_bool("CALIBRATION_V2_ENABLED", default=False),
+        "internal_reviewers_enabled": _env_bool(
+            "CALIBRATION_INTERNAL_REVIEWERS_ENABLED", default=False
+        ),
         "external_reviewers_enabled": _env_bool(
             "CALIBRATION_EXTERNAL_REVIEWERS_ENABLED", default=False
         ),
