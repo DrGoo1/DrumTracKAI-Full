@@ -35,25 +35,55 @@ class _TrialDbDouble:
     def __init__(self) -> None:
         self.runs: Dict[str, _FakeRun] = {}
         self.render_jobs: List[Dict[str, Any]] = []
+        self.run_versions: List[Dict[str, Any]] = []
+        self.event_rows: List[Dict[str, Any]] = []
+        self.call_order: List[tuple[str, str]] = []
         self.run_log_calls = 0
         self.session_calls = 0
         self.item_calls = 0
+        self.event_write_ok = True
 
-    def log_calibration_run(self, *, run_id: str, drummer_slug: str, metadata: Dict[str, Any], **_: Any) -> str:
+    def log_calibration_run(
+        self,
+        *,
+        run_id: str,
+        drummer_slug: str,
+        metadata: Dict[str, Any],
+        **_: Any,
+    ) -> str:
         self.run_log_calls += 1
-        self.runs[run_id] = _FakeRun(run_id=run_id, drummer_slug=drummer_slug, metadata=dict(metadata or {}))
+        self.call_order.append(("run", run_id))
+        self.runs[run_id] = _FakeRun(
+            run_id=run_id,
+            drummer_slug=drummer_slug,
+            metadata=dict(metadata or {}),
+        )
         return run_id
 
     def get_calibration_run(self, *, run_id: str) -> Optional[_FakeRun]:
         return self.runs.get(run_id)
 
-    def upsert_run_version(self, **_: Any) -> bool:
+    def upsert_run_version(self, *, run_id: str, **kwargs: Any) -> bool:
+        self.call_order.append(("version", run_id))
+        self.run_versions.append({"run_id": run_id, **dict(kwargs)})
         return True
 
-    def upsert_calibration_run_events(self, **_: Any) -> bool:
+    def upsert_calibration_run_events(self, *, run_id: str, **kwargs: Any) -> bool:
+        self.call_order.append(("events", run_id))
+        if not self.event_write_ok:
+            return False
+        self.event_rows.append({"run_id": run_id, **dict(kwargs)})
         return True
 
-    def log_calibration_render_job(self, *, run_id: str, render_profile_id: str, sample_pack_version: str, **_: Any) -> str:
+    def log_calibration_render_job(
+        self,
+        *,
+        run_id: str,
+        render_profile_id: str,
+        sample_pack_version: str,
+        **_: Any,
+    ) -> str:
+        self.call_order.append(("job", run_id))
         job_id = f"rjob_{len(self.render_jobs) + 1}"
         self.render_jobs.append(
             {
@@ -95,20 +125,27 @@ class _EngineFallbackDouble:
     def generate_neutral(self, **_: Any) -> ProductionCandidate:
         return ProductionCandidate(
             role="neutral",
-            event_stream=[{"time_sec": 0.0}],
+            event_stream=[{"time_sec": 0.0, "instrument_id": "kick", "velocity": 96}],
             performance_spec=None,
             tempo_bpm=110.0,
             time_signature={"display": "4/4", "numerator": 4, "denominator": 4},
             bars=8,
             kit_id="default_kit",
             base_groove_path="tests/assets/base_groove.json",
-            metadata={"engine": "neutral", "base_pattern_hash": "base_hash", "event_stream_hash": "neutral_hash"},
+            metadata={
+                "engine": "neutral",
+                "base_pattern_hash": "base_hash",
+                "event_stream_hash": "neutral_hash",
+            },
         )
 
     def generate_candidate(self, *, role: str, **_: Any) -> ProductionCandidate:
         return ProductionCandidate(
             role=role,
-            event_stream=[{"time_sec": 0.0}, {"time_sec": 0.5}],
+            event_stream=[
+                {"time_sec": 0.0, "instrument_id": "kick", "velocity": 100},
+                {"time_sec": 0.5, "instrument_id": "snare_center", "velocity": 110},
+            ],
             performance_spec={"phrases": [{"id": "p1"}]},
             tempo_bpm=110.0,
             time_signature={"display": "4/4", "numerator": 4, "denominator": 4},
@@ -134,11 +171,17 @@ class _EngineUnavailableDouble(_EngineFallbackDouble):
 
 
 class _EngineCanonicalDouble(_EngineFallbackDouble):
-    def generate_candidate(self, *, role: str, treatment_id: Optional[str] = None, **_: Any) -> ProductionCandidate:
+    def generate_candidate(
+        self,
+        *,
+        role: str,
+        treatment_id: Optional[str] = None,
+        **_: Any,
+    ) -> ProductionCandidate:
         meta = {
             "engine": "production_performance_spec_v2",
             "production_engine_mode": "http",
-            "production_metadata": {"backend": "canonical_generation_api", "version": "1.2.0"},
+            "production_metadata": {"backend": "onnx", "version": "1.2.0"},
             "base_pattern_hash": "base_hash",
             "event_stream_hash": f"{role}_hash_distinct",
             "paired_seed": 123,
@@ -147,7 +190,10 @@ class _EngineCanonicalDouble(_EngineFallbackDouble):
         }
         return ProductionCandidate(
             role=role,
-            event_stream=[{"time_sec": 0.0}, {"time_sec": 0.5}],
+            event_stream=[
+                {"time_sec": 0.0, "instrument_id": "kick", "velocity": 100},
+                {"time_sec": 0.5, "instrument_id": "snare_center", "velocity": 110},
+            ],
             performance_spec={"phrases": [{"id": "p1"}]},
             tempo_bpm=110.0,
             time_signature={"display": "4/4", "numerator": 4, "denominator": 4},
@@ -156,6 +202,23 @@ class _EngineCanonicalDouble(_EngineFallbackDouble):
             base_groove_path="tests/assets/base_groove.json",
             metadata={**meta, "treatment_id": treatment_id},
             profile_snapshot={"drummer": "john_bonham"},
+        )
+
+
+class _EngineEmptyNeutralDouble(_EngineCanonicalDouble):
+    def generate_neutral(self, **_: Any) -> ProductionCandidate:
+        candidate = super().generate_neutral()
+        return ProductionCandidate(
+            role=candidate.role,
+            event_stream=[],
+            performance_spec=candidate.performance_spec,
+            tempo_bpm=candidate.tempo_bpm,
+            time_signature=candidate.time_signature,
+            bars=candidate.bars,
+            kit_id=candidate.kit_id,
+            base_groove_path=candidate.base_groove_path,
+            metadata=candidate.metadata,
+            profile_snapshot=candidate.profile_snapshot,
         )
 
 
@@ -174,7 +237,17 @@ def _trial_input() -> TrialCreateInput:
     )
 
 
-def test_staging_rejects_remote_generation_unavailable_and_commits_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+def _canonical_service(db: _TrialDbDouble) -> CalibrationTrialService:
+    return CalibrationTrialService(
+        db,
+        repository=_RepoDouble(),
+        engine=_EngineCanonicalDouble(),
+    )
+
+
+def test_staging_rejects_remote_generation_unavailable_and_commits_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "staging")
     monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
     db = _TrialDbDouble()
@@ -191,7 +264,9 @@ def test_staging_rejects_remote_generation_unavailable_and_commits_nothing(monke
     assert repo.trial_records == []
 
 
-def test_staging_rejects_fallback_backend_and_commits_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_staging_rejects_fallback_backend_and_commits_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "staging")
     monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
     db = _TrialDbDouble()
@@ -208,7 +283,9 @@ def test_staging_rejects_fallback_backend_and_commits_nothing(monkeypatch: pytes
     assert repo.trial_records == []
 
 
-def test_successful_trial_inserts_exactly_three_render_jobs_for_run_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_successful_trial_inserts_exactly_three_render_jobs_for_run_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
     monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
@@ -224,6 +301,78 @@ def test_successful_trial_inserts_exactly_three_render_jobs_for_run_ids(monkeypa
     assert len(db.render_jobs) == 3
     assert {item["run_id"] for item in db.render_jobs} == run_ids
     assert len(repo.trial_records) == 1
+
+
+def test_successful_trial_persists_three_nonempty_event_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
+    monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
+    db = _TrialDbDouble()
+
+    result = _canonical_service(db).create_trial(_trial_input())
+
+    assert len(db.event_rows) == 3
+    assert {row["run_id"] for row in db.event_rows} == set(result["run_ids"].values())
+    assert all(row["event_stream"] for row in db.event_rows)
+    assert len(db.run_versions) == 3
+
+
+def test_run_version_and_events_are_saved_before_each_render_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
+    monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
+    db = _TrialDbDouble()
+
+    result = _canonical_service(db).create_trial(_trial_input())
+
+    for run_id in result["run_ids"].values():
+        run_index = db.call_order.index(("run", run_id))
+        version_index = db.call_order.index(("version", run_id))
+        events_index = db.call_order.index(("events", run_id))
+        job_index = db.call_order.index(("job", run_id))
+        assert run_index < version_index < events_index < job_index
+
+
+def test_event_persistence_failure_prevents_render_queueing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
+    monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
+    db = _TrialDbDouble()
+    db.event_write_ok = False
+
+    with pytest.raises(RuntimeError, match="Failed to persist event stream"):
+        _canonical_service(db).create_trial(_trial_input())
+
+    assert db.render_jobs == []
+
+
+def test_empty_candidate_events_are_rejected_before_queueing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("CALIBRATION_GENERATION_MODE", "http")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
+    monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
+    db = _TrialDbDouble()
+    service = CalibrationTrialService(
+        db,
+        repository=_RepoDouble(),
+        engine=_EngineEmptyNeutralDouble(),
+    )
+
+    with pytest.raises(RuntimeError, match="no renderable events"):
+        service.create_trial(_trial_input())
+
+    assert db.render_jobs == []
 
 
 def test_http_error_maps_dependency_error_to_502() -> None:
@@ -256,7 +405,9 @@ class _RenderDbDouble:
         return None
 
 
-def test_render_service_is_queue_only_and_does_not_execute_worker_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_service_is_queue_only_and_does_not_execute_worker_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("CALIBRATION_RENDER_WORKER_COMMAND", "echo SHOULD_NOT_RUN")
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
     monkeypatch.delenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", raising=False)
@@ -280,7 +431,9 @@ def test_render_service_is_queue_only_and_does_not_execute_worker_command(monkey
     assert db.logged_run_meta[-1]["render"]["job_id"] == "rjob_123"
 
 
-def test_render_service_detects_database_fingerprint_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_service_detects_database_fingerprint_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db.example:5432/calibration")
     monkeypatch.setenv("CALIBRATION_RENDER_WORKER_DB_FINGERPRINT", "definitely_mismatch")
     db = _RenderDbDouble()
@@ -317,16 +470,33 @@ class _WorkerDbDouble:
         self.claimed = False
         self.updates: List[Dict[str, Any]] = []
         self.logged_artifacts: List[Dict[str, Any]] = []
-        self.run = _FakeRun(run_id="calv2_run", drummer_slug="john_bonham", metadata={"render": {"request": {"schema": "v2"}}})
+        self.run = _FakeRun(
+            run_id="calv2_run",
+            drummer_slug="john_bonham",
+            metadata={"render": {"request": {"schema": "v2"}}},
+        )
+        self.event_stream: List[Dict[str, Any]] = [
+            {"time_sec": 0.0, "instrument_id": "kick", "velocity": 96}
+        ]
 
-    def list_calibration_render_jobs(self, *, statuses: Optional[List[str]] = None, limit: int = 25) -> List[CalibrationRenderJob]:
+    def list_calibration_render_jobs(
+        self,
+        *,
+        statuses: Optional[List[str]] = None,
+        limit: int = 25,
+    ) -> List[CalibrationRenderJob]:
         if self.claimed:
             return []
         assert statuses is not None
         assert limit >= 1
         return [self.job]
 
-    def claim_calibration_render_job(self, *, job_id: str, from_statuses: Optional[List[str]] = None) -> bool:
+    def claim_calibration_render_job(
+        self,
+        *,
+        job_id: str,
+        from_statuses: Optional[List[str]] = None,
+    ) -> bool:
         assert job_id == "rjob_1"
         self.claimed = True
         return True
@@ -337,7 +507,7 @@ class _WorkerDbDouble:
 
     def get_calibration_run_events_payload(self, *, run_id: str) -> Dict[str, Any]:
         assert run_id == "calv2_run"
-        return {"run_id": run_id, "event_stream": [{"time_sec": 0.0}]}
+        return {"run_id": run_id, "event_stream": list(self.event_stream)}
 
     def log_audio_artifact(self, **kwargs: Any) -> str:
         self.logged_artifacts.append(dict(kwargs))
@@ -352,7 +522,11 @@ class _WorkerDbDouble:
         return self.run.run_id
 
 
-def test_only_worker_executes_command_and_writes_artifact_ids(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_only_worker_executes_command_and_writes_artifact_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
     db = _WorkerDbDouble()
     worker = CalibrationRenderWorker(
         db,
@@ -381,7 +555,10 @@ def test_only_worker_executes_command_and_writes_artifact_ids(monkeypatch: pytes
         out_path.write_text(json.dumps(payload), encoding="utf-8")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("backend.workers.calibration_render_worker.subprocess.run", _fake_subprocess_run)
+    monkeypatch.setattr(
+        "backend.workers.calibration_render_worker.subprocess.run",
+        _fake_subprocess_run,
+    )
 
     summary = worker.run_once(max_jobs=1)
 
@@ -390,6 +567,87 @@ def test_only_worker_executes_command_and_writes_artifact_ids(monkeypatch: pytes
     completed_updates = [u for u in db.updates if u.get("status") == "completed"]
     assert len(completed_updates) == 1
     assert completed_updates[0]["artifact_ids"] == ["art_1"]
+
+
+def test_worker_does_not_invoke_renderer_without_persisted_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    db = _WorkerDbDouble()
+    db.event_stream = []
+    worker = CalibrationRenderWorker(
+        db,
+        command_template="renderer --input {input} --output {output}",
+        max_retries=1,
+    )
+    called = {"count": 0}
+
+    def _unexpected_subprocess(*_args: Any, **_kwargs: Any) -> Any:
+        called["count"] += 1
+        raise AssertionError("renderer must not be invoked")
+
+    monkeypatch.setattr(
+        "backend.workers.calibration_render_worker.subprocess.run",
+        _unexpected_subprocess,
+    )
+
+    summary = worker.run_once(max_jobs=1)
+
+    assert called["count"] == 0
+    assert summary["failed"] == 1
+    failed_updates = [u for u in db.updates if u.get("status") == "failed"]
+    assert failed_updates
+    assert "No persisted renderable events" in failed_updates[-1]["error_text"]
+
+
+def test_staging_worker_rejects_local_or_procedural_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("CALIBRATION_RENDERER_VERSION", "calibration_procedural_renderer_v1")
+    db = _WorkerDbDouble()
+    worker = CalibrationRenderWorker(
+        db,
+        command_template="renderer --input {input} --output {output}",
+        max_retries=1,
+    )
+
+    def _fake_subprocess_run(command: List[str], **_: Any) -> Any:
+        out_index = command.index("--output") + 1
+        out_path = Path(command[out_index])
+        out_path.write_text(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {
+                            "artifact_id": "procedural",
+                            "artifact_type": "audio",
+                            "storage_uri": str(tmp_path / "procedural.wav"),
+                            "duration_sec": 4.0,
+                            "sample_pack_version": "default",
+                            "render_recipe": {
+                                "renderer": "calibration_procedural_renderer_v1",
+                                "renderer_version": "calibration_procedural_renderer_v1",
+                                "diagnostic_only": True,
+                            },
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "backend.workers.calibration_render_worker.subprocess.run",
+        _fake_subprocess_run,
+    )
+
+    summary = worker.run_once(max_jobs=1)
+
+    assert summary["failed"] == 1
+    assert db.logged_artifacts == []
 
 
 def test_refresh_ready_query_requires_artifacts_for_neutral_and_both_visible_lanes() -> None:
