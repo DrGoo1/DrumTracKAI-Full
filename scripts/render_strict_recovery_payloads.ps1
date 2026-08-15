@@ -32,12 +32,17 @@ param(
     [string]$GenerationAwsRegion = "",
     [string]$GenerationAuthProviderNote = "",
     [string]$AwsS3SignedUrlTtlSec = "900",
+    [string]$AwsS3ServerSideEncryption = "AES256",
     [string]$CalibrationRendererVersion = "unknown",
     [string]$CalibrationRenderMaxRetries = "3",
     [string]$CalibrationRenderWorkerPollSec = "2.0",
     [string]$CalibrationRenderCommandTimeoutSec = "300",
+    [string]$CalibrationRenderSampleRate = "48000",
     [string]$CalibrationSamplePackVersion = "default",
+    [string]$CalibrationSampleManifestUri = "",
+    [string]$CalibrationRenderOutputPrefix = "calibration/v2",
     [string]$CalibrationRenderProfileId = "calibration_standard_v2",
+    [bool]$CalibrationInternalReviewersEnabled = $true,
     [string]$OutputDir = "scripts/render_payloads"
 )
 
@@ -83,6 +88,23 @@ if ($RendererCommandTemplate -match "backend\.workers\.calibration_render_worker
     throw "RendererCommandTemplate must be the per-job renderer subprocess command, not the worker startup command."
 }
 
+if ($RendererCommandTemplate -match "calibration_procedural_renderer") {
+    throw "The procedural diagnostic renderer is not permitted in strict recovery payloads. Use scripts/calibration_sample_renderer.py or another approved real renderer."
+}
+
+$strictRuntime = $AppEnv.Trim().ToLowerInvariant() -in @("staging", "production", "prod", "live")
+if ($strictRuntime) {
+    if ([string]::IsNullOrWhiteSpace($CalibrationSampleManifestUri)) {
+        throw "CalibrationSampleManifestUri is required in staging/production."
+    }
+    if ([string]::IsNullOrWhiteSpace($CalibrationRendererVersion) -or $CalibrationRendererVersion -eq "unknown") {
+        throw "CalibrationRendererVersion must be explicit in staging/production."
+    }
+    if ([string]::IsNullOrWhiteSpace($CalibrationSamplePackVersion) -or $CalibrationSamplePackVersion -eq "default") {
+        throw "CalibrationSamplePackVersion must be explicit in staging/production."
+    }
+}
+
 $hasMountedModel = -not [string]::IsNullOrWhiteSpace($ActiveModelPath)
 $hasBootstrapModelUri = -not [string]::IsNullOrWhiteSpace($GenerationModelS3Uri)
 $hasBootstrapModelHash = -not [string]::IsNullOrWhiteSpace($GenerationModelSha256)
@@ -110,9 +132,9 @@ if ($hasBootstrapModelUri -and $hasBootstrapModelHash) {
 }
 
 $workerDbFingerprint = Get-DbFingerprint -Url $DatabaseUrl
-
 $includeAwsAccessKeyId = -not [string]::IsNullOrWhiteSpace($AwsAccessKeyId)
 $includeAwsSecretAccessKey = -not [string]::IsNullOrWhiteSpace($AwsSecretAccessKey)
+$internalReviewersValue = if ($CalibrationInternalReviewersEnabled) { "true" } else { "false" }
 
 $generationVars = New-Object System.Collections.Generic.List[object]
 $generationVars.Add((New-EnvVarSpec -Key "APP_ENV" -Value $AppEnv))
@@ -144,6 +166,7 @@ if (-not [string]::IsNullOrWhiteSpace($LogLevel)) {
 $api2Vars = @(
     (New-EnvVarSpec -Key "APP_ENV" -Value $AppEnv),
     (New-EnvVarSpec -Key "CALIBRATION_V2_ENABLED" -Value "true"),
+    (New-EnvVarSpec -Key "CALIBRATION_INTERNAL_REVIEWERS_ENABLED" -Value $internalReviewersValue),
     (New-EnvVarSpec -Key "CALIBRATION_EXTERNAL_REVIEWERS_ENABLED" -Value "false"),
     (New-EnvVarSpec -Key "ALLOW_UNVERIFIED_JWT" -Value "false"),
     (New-EnvVarSpec -Key "DB_BACKEND" -Value "postgres"),
@@ -156,6 +179,7 @@ $api2Vars = @(
     (New-EnvVarSpec -Key "SUPABASE_JWT_AUDIENCE" -Value $SupabaseJwtAudience),
     (New-EnvVarSpec -Key "SUPABASE_JWT_ISSUER" -Value $SupabaseJwtIssuer),
     (New-EnvVarSpec -Key "AWS_S3_BUCKET" -Value $AwsS3Bucket),
+    (New-EnvVarSpec -Key "CALIBRATION_ARTIFACT_BUCKETS" -Value $AwsS3Bucket),
     (New-EnvVarSpec -Key "AWS_REGION" -Value $AwsRegion),
     (New-EnvVarSpec -Key "AWS_S3_SIGNED_URL_TTL_SEC" -Value $AwsS3SignedUrlTtlSec)
 )
@@ -173,13 +197,20 @@ $workerVars = @(
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_WORKER_DB_FINGERPRINT" -Value $workerDbFingerprint),
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_WORKER_COMMAND" -Value $RendererCommandTemplate),
     (New-EnvVarSpec -Key "CALIBRATION_RENDERER_VERSION" -Value $CalibrationRendererVersion),
+    (New-EnvVarSpec -Key "CALIBRATION_ALLOWED_RENDERERS" -Value $CalibrationRendererVersion),
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_MAX_RETRIES" -Value $CalibrationRenderMaxRetries),
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_WORKER_POLL_SEC" -Value $CalibrationRenderWorkerPollSec),
     (New-EnvVarSpec -Key "CALIBRATION_RENDER_COMMAND_TIMEOUT_SEC" -Value $CalibrationRenderCommandTimeoutSec),
+    (New-EnvVarSpec -Key "CALIBRATION_RENDER_SAMPLE_RATE" -Value $CalibrationRenderSampleRate),
+    (New-EnvVarSpec -Key "CALIBRATION_RENDER_UPLOAD_ENABLED" -Value "true"),
+    (New-EnvVarSpec -Key "CALIBRATION_RENDER_OUTPUT_PREFIX" -Value $CalibrationRenderOutputPrefix),
+    (New-EnvVarSpec -Key "CALIBRATION_SAMPLE_MANIFEST_URI" -Value $CalibrationSampleManifestUri),
+    (New-EnvVarSpec -Key "CALIBRATION_SAMPLE_PACK_VERSION" -Value $CalibrationSamplePackVersion),
+    (New-EnvVarSpec -Key "CALIBRATION_ALLOWED_SAMPLE_PACKS" -Value $CalibrationSamplePackVersion),
+    (New-EnvVarSpec -Key "CALIBRATION_RENDER_PROFILE_ID" -Value $CalibrationRenderProfileId),
     (New-EnvVarSpec -Key "AWS_S3_BUCKET" -Value $AwsS3Bucket),
     (New-EnvVarSpec -Key "AWS_REGION" -Value $AwsRegion),
-    (New-EnvVarSpec -Key "CALIBRATION_SAMPLE_PACK_VERSION" -Value $CalibrationSamplePackVersion),
-    (New-EnvVarSpec -Key "CALIBRATION_RENDER_PROFILE_ID" -Value $CalibrationRenderProfileId)
+    (New-EnvVarSpec -Key "AWS_S3_SERVER_SIDE_ENCRYPTION" -Value $AwsS3ServerSideEncryption)
 )
 if ($includeAwsAccessKeyId) {
     $workerVars += (New-EnvVarSpec -Key "AWS_ACCESS_KEY_ID" -Value $AwsAccessKeyId)
@@ -205,6 +236,9 @@ $summary = @{
     app_env = $AppEnv
     inference_backend = $InferenceBackend
     worker_db_fingerprint = $workerDbFingerprint
+    renderer_version = $CalibrationRendererVersion
+    sample_pack_version = $CalibrationSamplePackVersion
+    internal_reviewers_enabled = $CalibrationInternalReviewersEnabled
     generation_payload = $generationPayloadPath
     api2_payload = $api2PayloadPath
     worker_payload = $workerPayloadPath
@@ -217,3 +251,4 @@ Write-Host "  $generationPayloadPath"
 Write-Host "  $api2PayloadPath"
 Write-Host "  $workerPayloadPath"
 Write-Host "Worker DB fingerprint was computed and included in API2/worker payload files." -ForegroundColor Yellow
+Write-Host "Generated payloads use the real sample renderer contract and keep external reviewers disabled." -ForegroundColor Yellow
