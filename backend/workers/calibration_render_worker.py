@@ -50,12 +50,20 @@ class CalibrationRenderWorker:
         self._command_template = (
             str(command_template or os.getenv("CALIBRATION_RENDER_WORKER_COMMAND", "")).strip()
         )
-        self._max_retries = int(max_retries if max_retries is not None else os.getenv("CALIBRATION_RENDER_MAX_RETRIES", "3") or "3")
+        self._max_retries = int(
+            max_retries
+            if max_retries is not None
+            else os.getenv("CALIBRATION_RENDER_MAX_RETRIES", "3") or "3"
+        )
         self._poll_interval_sec = float(
-            poll_interval_sec if poll_interval_sec is not None else os.getenv("CALIBRATION_RENDER_WORKER_POLL_SEC", "2.0") or "2.0"
+            poll_interval_sec
+            if poll_interval_sec is not None
+            else os.getenv("CALIBRATION_RENDER_WORKER_POLL_SEC", "2.0") or "2.0"
         )
         self._command_timeout_sec = int(
-            command_timeout_sec if command_timeout_sec is not None else os.getenv("CALIBRATION_RENDER_COMMAND_TIMEOUT_SEC", "300") or "300"
+            command_timeout_sec
+            if command_timeout_sec is not None
+            else os.getenv("CALIBRATION_RENDER_COMMAND_TIMEOUT_SEC", "300") or "300"
         )
 
     @property
@@ -64,9 +72,15 @@ class CalibrationRenderWorker:
 
     def run_once(self, *, max_jobs: int = 2) -> Dict[str, Any]:
         summary = WorkerRunSummary()
-        jobs = self._db.list_calibration_render_jobs(statuses=["queued", "retry"], limit=max(1, int(max_jobs)))
+        jobs = self._db.list_calibration_render_jobs(
+            statuses=["queued", "retry"],
+            limit=max(1, int(max_jobs)),
+        )
         for job in jobs:
-            if not self._db.claim_calibration_render_job(job_id=job.job_id, from_statuses=["queued", "retry"]):
+            if not self._db.claim_calibration_render_job(
+                job_id=job.job_id,
+                from_statuses=["queued", "retry"],
+            ):
                 summary.skipped += 1
                 continue
             summary.processed += 1
@@ -86,7 +100,12 @@ class CalibrationRenderWorker:
             "retried": summary.retried,
             "failed": summary.failed,
             "skipped": summary.skipped,
-            "queued_remaining": len(self._db.list_calibration_render_jobs(statuses=["queued", "retry"], limit=200)),
+            "queued_remaining": len(
+                self._db.list_calibration_render_jobs(
+                    statuses=["queued", "retry"],
+                    limit=200,
+                )
+            ),
             "command_configured": self.command_configured,
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -151,8 +170,17 @@ class CalibrationRenderWorker:
                     storage_uri=str(artifact.get("storage_uri") or "").strip(),
                     duration_sec=self._safe_float(artifact.get("duration_sec")),
                     loudness_lufs=self._safe_float(artifact.get("loudness_lufs")),
-                    sample_pack_version=str(artifact.get("sample_pack_version") or job.sample_pack_version or "default"),
-                    render_recipe=(artifact.get("render_recipe") if isinstance(artifact.get("render_recipe"), dict) else {}) or {},
+                    sample_pack_version=str(
+                        artifact.get("sample_pack_version")
+                        or job.sample_pack_version
+                        or "default"
+                    ),
+                    render_recipe=(
+                        artifact.get("render_recipe")
+                        if isinstance(artifact.get("render_recipe"), dict)
+                        else {}
+                    )
+                    or {},
                     artifact_id=(str(artifact.get("artifact_id") or "").strip() or None),
                 )
                 if artifact_id:
@@ -200,18 +228,42 @@ class CalibrationRenderWorker:
                 },
                 outcome=("queued" if should_retry else "failure"),
             )
-            logger.exception("calibration_render_job_failed run_id=%s job_id=%s", run_id, job.job_id)
+            logger.exception(
+                "calibration_render_job_failed run_id=%s job_id=%s",
+                run_id,
+                job.job_id,
+            )
             return next_status
 
-    def _invoke_renderer(self, *, job: CalibrationRenderJob, run: Any, attempts: int) -> List[Dict[str, Any]]:
+    def _invoke_renderer(
+        self,
+        *,
+        job: CalibrationRenderJob,
+        run: Any,
+        attempts: int,
+    ) -> List[Dict[str, Any]]:
         if not self._command_template:
             raise RuntimeError("CALIBRATION_RENDER_WORKER_COMMAND is not configured")
 
         run_event_payload = self._db.get_calibration_run_events_payload(run_id=run.run_id) or {}
+        event_stream = (
+            run_event_payload.get("event_stream")
+            if isinstance(run_event_payload, dict)
+            and isinstance(run_event_payload.get("event_stream"), list)
+            else []
+        )
+        if not event_stream:
+            raise RuntimeError(
+                f"No persisted renderable events found for run_id={run.run_id}"
+            )
+
         meta = dict(run.metadata or {})
         render_meta = meta.get("render") if isinstance(meta.get("render"), dict) else {}
-
-        request_payload = render_meta.get("request") if isinstance(render_meta.get("request"), dict) else {}
+        request_payload = (
+            render_meta.get("request")
+            if isinstance(render_meta.get("request"), dict)
+            else {}
+        )
         payload = {
             "job": {
                 "job_id": job.job_id,
@@ -234,7 +286,10 @@ class CalibrationRenderWorker:
             temp_path = Path(temp_dir)
             input_path = temp_path / "render_request.json"
             output_path = temp_path / "render_result.json"
-            input_path.write_text(json.dumps(payload, ensure_ascii=True, default=str), encoding="utf-8")
+            input_path.write_text(
+                json.dumps(payload, ensure_ascii=True, default=str),
+                encoding="utf-8",
+            )
 
             command = self._build_command(input_path=input_path, output_path=output_path)
             proc = subprocess.run(
@@ -250,7 +305,8 @@ class CalibrationRenderWorker:
                 stderr = (proc.stderr or "").strip()
                 stdout = (proc.stdout or "").strip()
                 raise RuntimeError(
-                    f"Render command failed with exit code {proc.returncode}. stdout={stdout[:4000]} stderr={stderr[:4000]}"
+                    f"Render command failed with exit code {proc.returncode}. "
+                    f"stdout={stdout[:4000]} stderr={stderr[:4000]}"
                 )
 
             result_payload: Dict[str, Any] = {}
@@ -267,37 +323,92 @@ class CalibrationRenderWorker:
             else:
                 raise RuntimeError("Render command produced no result payload")
 
-        artifacts = result_payload.get("artifacts") if isinstance(result_payload.get("artifacts"), list) else []
+        artifacts = (
+            result_payload.get("artifacts")
+            if isinstance(result_payload.get("artifacts"), list)
+            else []
+        )
         normalized: List[Dict[str, Any]] = []
+        strict_runtime = self._is_production()
+        allowed_renderers = {
+            item.strip()
+            for item in str(os.getenv("CALIBRATION_ALLOWED_RENDERERS", "")).split(",")
+            if item.strip()
+        }
+        allowed_sample_packs = {
+            item.strip()
+            for item in str(os.getenv("CALIBRATION_ALLOWED_SAMPLE_PACKS", "")).split(",")
+            if item.strip()
+        }
+
         for artifact in artifacts:
             if not isinstance(artifact, dict):
                 continue
             storage_uri = str(artifact.get("storage_uri") or "").strip()
             artifact_type = str(artifact.get("artifact_type") or "candidate_audio").strip()
             duration_sec = self._safe_float(artifact.get("duration_sec"))
-            sample_pack_version = str(artifact.get("sample_pack_version") or job.sample_pack_version or "").strip()
-            render_recipe = (artifact.get("render_recipe") if isinstance(artifact.get("render_recipe"), dict) else {}) or {}
+            sample_pack_version = str(
+                artifact.get("sample_pack_version")
+                or job.sample_pack_version
+                or ""
+            ).strip()
+            render_recipe = (
+                artifact.get("render_recipe")
+                if isinstance(artifact.get("render_recipe"), dict)
+                else {}
+            ) or {}
+
             if not storage_uri or not artifact_type or not self._storage_uri_allowed(storage_uri):
                 continue
-            if self._is_production() and (duration_sec is None or duration_sec <= 0 or not sample_pack_version):
+            if strict_runtime and (
+                duration_sec is None
+                or duration_sec <= 0
+                or not sample_pack_version
+            ):
                 continue
+
+            renderer_version = str(
+                render_recipe.get("renderer_version")
+                or artifact.get("renderer_version")
+                or os.getenv("CALIBRATION_RENDERER_VERSION", "unknown")
+            ).strip()
+            renderer_name = str(
+                render_recipe.get("renderer")
+                or renderer_version
+                or "unknown"
+            ).strip()
+            sha256 = str(
+                render_recipe.get("sha256")
+                or artifact.get("sha256")
+                or ""
+            ).strip() or None
+            diagnostic_only = bool(render_recipe.get("diagnostic_only"))
+
+            if strict_runtime:
+                if renderer_version in {"", "unknown"}:
+                    continue
+                if diagnostic_only or "procedural" in renderer_name.lower():
+                    continue
+                if not sha256:
+                    continue
+                if allowed_renderers and renderer_version not in allowed_renderers:
+                    continue
+                if allowed_sample_packs and sample_pack_version not in allowed_sample_packs:
+                    continue
+
             render_recipe = {
                 **render_recipe,
-                "renderer_version": str(
-                    render_recipe.get("renderer_version")
-                    or artifact.get("renderer_version")
-                    or os.getenv("CALIBRATION_RENDERER_VERSION", "unknown")
-                ),
+                "renderer": renderer_name,
+                "renderer_version": renderer_version,
                 "sample_pack_version": sample_pack_version,
-                "sha256": str(render_recipe.get("sha256") or artifact.get("sha256") or "").strip() or None,
+                "sha256": sha256,
                 "true_peak_db": self._safe_float(
                     render_recipe.get("true_peak_db")
                     if render_recipe.get("true_peak_db") is not None
                     else artifact.get("true_peak_db")
                 ),
+                "diagnostic_only": diagnostic_only,
             }
-            if self._is_production() and render_recipe["renderer_version"] in {"", "unknown"}:
-                continue
             normalized.append(
                 {
                     "artifact_id": str(artifact.get("artifact_id") or "").strip() or None,
@@ -318,7 +429,13 @@ class CalibrationRenderWorker:
         template = self._command_template.strip()
         if not template:
             raise RuntimeError("Missing render command template")
-        formatted = template.replace("{input}", str(input_path)).replace("{output}", str(output_path))
+        if "{input}" not in template or "{output}" not in template:
+            raise RuntimeError(
+                "CALIBRATION_RENDER_WORKER_COMMAND must contain {input} and {output}"
+            )
+        formatted = template.replace("{input}", str(input_path)).replace(
+            "{output}", str(output_path)
+        )
         return shlex.split(formatted, posix=(os.name != "nt"))
 
     def _update_run_render_meta(
@@ -330,7 +447,11 @@ class CalibrationRenderWorker:
         outcome: str,
     ) -> None:
         existing_meta = dict(run.metadata or {})
-        existing_render = existing_meta.get("render") if isinstance(existing_meta.get("render"), dict) else {}
+        existing_render = (
+            existing_meta.get("render")
+            if isinstance(existing_meta.get("render"), dict)
+            else {}
+        )
         merged = dict(existing_render)
         merged.update(render_patch or {})
         existing_meta["render"] = merged
@@ -346,7 +467,10 @@ class CalibrationRenderWorker:
 
     @staticmethod
     def _is_production() -> bool:
-        return str(os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development"))).strip().lower() in {
+        return str(
+            os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development"))
+        ).strip().lower() in {
+            "staging",
             "production",
             "prod",
             "live",
