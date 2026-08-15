@@ -18,6 +18,7 @@ from backend.security.supabase_auth import AuthenticatedUser, require_authentica
 from backend.services.artifact_url_service import ArtifactUrlService
 from backend.services.calibration_profile_resolver import CalibrationProfileUnavailable, validate_profile_overrides
 from backend.services.calibration_production_engine import validate_cfg_overrides
+from backend.services.calibration_trial_readiness import CalibrationTrialReadinessService
 from backend.services.calibration_trial_service import CalibrationDependencyError, CalibrationTrialService, TrialCreateInput
 from backend.services.production_performance_client import ProductionGenerationUnavailable
 from backend.services.calibration_v2_repository import (
@@ -65,6 +66,12 @@ def _db_service() -> CentralDatabaseService:
 
 def _repository(db: CentralDatabaseService = Depends(_db_service)) -> CalibrationV2Repository:
     return CalibrationV2Repository(db)
+
+
+def _readiness_service(
+    db: CentralDatabaseService = Depends(_db_service),
+) -> CalibrationTrialReadinessService:
+    return CalibrationTrialReadinessService(db)
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -296,8 +303,9 @@ def reviewer_me(context=Depends(_require_reviewer_context)) -> Dict[str, Any]:
 def reviewer_drummers(
     context=Depends(_require_reviewer_context),
     repo: CalibrationV2Repository = Depends(_repository),
+    readiness: CalibrationTrialReadinessService = Depends(_readiness_service),
 ) -> Dict[str, Any]:
-    repo.refresh_ready_trials_for_reviewer(context.reviewer_id)
+    readiness.refresh_for_reviewer(context.reviewer_id)
     return {"items": repo.list_ready_drummers(context.reviewer_id)}
 
 
@@ -306,10 +314,11 @@ def reviewer_next(
     target_drummer_slug: Optional[str] = Query(default=None),
     context=Depends(_require_reviewer_context),
     repo: CalibrationV2Repository = Depends(_repository),
+    readiness: CalibrationTrialReadinessService = Depends(_readiness_service),
     db: CentralDatabaseService = Depends(_db_service),
 ) -> Dict[str, Any]:
     try:
-        repo.refresh_ready_trials_for_reviewer(context.reviewer_id)
+        readiness.refresh_for_reviewer(context.reviewer_id)
         row = repo.next_ready_item_for_reviewer(
             reviewer_id=context.reviewer_id,
             target_drummer_slug=target_drummer_slug,
@@ -326,12 +335,21 @@ def reviewer_item(
     item_id: str,
     context=Depends(_require_reviewer_context),
     repo: CalibrationV2Repository = Depends(_repository),
+    readiness: CalibrationTrialReadinessService = Depends(_readiness_service),
     db: CentralDatabaseService = Depends(_db_service),
 ) -> Dict[str, Any]:
     try:
+        readiness.refresh_for_reviewer(context.reviewer_id)
         row = repo.require_item_ownership(item_id=item_id, reviewer_id=context.reviewer_id)
+        if str(row.get("trial_status") or "").strip().lower() != "ready":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Calibration item is not ready for reviewer playback",
+            )
         repo.mark_session_started(str(row["session_id"]))
         return {"item": _reviewer_item_payload(row=row, repo=repo, db=db)}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _http_error(exc) from exc
 
@@ -436,5 +454,20 @@ def create_trial(
     try:
         service = CalibrationTrialService(db)
         return service.create_trial(TrialCreateInput(**payload.model_dump()))
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/admin/trials/{trial_id}/readiness")
+def trial_readiness_diagnostics(
+    trial_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+    readiness: CalibrationTrialReadinessService = Depends(_readiness_service),
+) -> Dict[str, Any]:
+    try:
+        diagnostics = readiness.diagnostics_for_trial(trial_id)
+        if not diagnostics:
+            raise CalibrationRecordNotFound(f"Trial not found: {trial_id}")
+        return {"status": "ok", "readiness": diagnostics}
     except Exception as exc:
         raise _http_error(exc) from exc
