@@ -91,10 +91,6 @@ class _ReviewerRepo:
         self.row = row
         self.started: List[str] = []
 
-    def list_ready_drummers(self, reviewer_id: str):
-        assert reviewer_id == "reviewer-1"
-        return [{"drummer_slug": "john_bonham", "display_name": "John Bonham", "ready_trial_count": 1}]
-
     def next_ready_item_for_reviewer(self, *, reviewer_id: str, target_drummer_slug=None):
         assert reviewer_id == "reviewer-1"
         return self.row
@@ -111,6 +107,32 @@ class _ReviewerRepo:
     @staticmethod
     def drummer_display_name(_slug: str) -> str:
         return "John Bonham"
+
+
+class _AssimilationModelDouble:
+    @staticmethod
+    def reviewer_payload() -> Dict[str, Any]:
+        return {
+            "drummer_slug": "john_bonham",
+            "display_name": "John Bonham",
+            "ready_trial_count": 1,
+            "queued_trial_count": 0,
+            "model_ready": True,
+            "can_queue_trial": True,
+            "source_song_count": 12,
+            "assimilation_score": 82,
+            "rollup_version": "phase5_v2",
+            "blockers": [],
+        }
+
+
+class _AssimilationDouble:
+    def __init__(self) -> None:
+        self.calls: List[Dict[str, Any]] = []
+
+    def list_models(self, **kwargs: Any):
+        self.calls.append(dict(kwargs))
+        return [_AssimilationModelDouble()]
 
 
 class _ArtifactDb:
@@ -173,18 +195,22 @@ def test_readiness_diagnostics_returns_strict_summary() -> None:
     assert result["durable_artifacts"] == 3
 
 
-def test_reviewer_drummers_refreshes_strict_readiness_before_listing() -> None:
+def test_reviewer_drummers_refreshes_strict_readiness_before_listing_assimilated_models() -> None:
     readiness = _ReadinessDouble()
-    repo = _ReviewerRepo()
+    assimilation = _AssimilationDouble()
 
     result = calibration_v2_api.reviewer_drummers(
         context=_reviewer_context(),
-        repo=repo,
         readiness=readiness,
+        assimilation=assimilation,
     )
 
     assert readiness.reviewers == ["reviewer-1"]
+    assert assimilation.calls == [
+        {"reviewer_id": "reviewer-1", "include_blocked": False}
+    ]
     assert result["items"][0]["drummer_slug"] == "john_bonham"
+    assert result["items"][0]["source_song_count"] == 12
 
 
 def test_reviewer_next_refreshes_strict_readiness_before_returning_item() -> None:
@@ -196,11 +222,13 @@ def test_reviewer_next_refreshes_strict_readiness_before_returning_item() -> Non
         context=_reviewer_context(),
         repo=repo,
         readiness=readiness,
+        assimilation=SimpleNamespace(),
         db=_ArtifactDb(),
     )
 
     assert readiness.reviewers == ["reviewer-1"]
     assert result["item"]["trial_id"] == "trial-1"
+    assert result["status"] == "ready"
     assert repo.started == ["session-1"]
 
 
