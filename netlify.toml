@@ -6,6 +6,7 @@
 [build.environment]
   NODE_VERSION = "22"
   CI = "false"
+  REACT_APP_API_BASE = "https://drumtrackai-calibration-api2.onrender.com"
   REACT_APP_SUPABASE_URL = "https://uytugrruofqzdjpxkhet.supabase.co"
 
 [[redirects]]
