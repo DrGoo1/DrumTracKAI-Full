@@ -5,6 +5,7 @@
 
 const context = String(process.env.CONTEXT || "unknown").trim();
 const branch = String(process.env.BRANCH || "unknown").trim();
+const defaultSupabaseUrl = "https://uytugrruofqzdjpxkhet.supabase.co";
 
 function value(name) {
   return String(process.env[name] || "").trim();
@@ -20,7 +21,9 @@ function safeOrigin(raw) {
 }
 
 const apiBase = value("REACT_APP_API_BASE");
-const supabaseUrl = value("REACT_APP_SUPABASE_URL");
+const configuredSupabaseUrl = value("REACT_APP_SUPABASE_URL");
+const supabaseUrl = configuredSupabaseUrl || defaultSupabaseUrl;
+const supabaseUrlSource = configuredSupabaseUrl ? "environment" : "repository-default";
 const publishableKey =
   value("REACT_APP_SUPABASE_PUBLISHABLE_KEY") ||
   value("REACT_APP_SUPABASE_ANON_KEY");
@@ -38,7 +41,7 @@ console.log(
   `  REACT_APP_API_BASE present=${checks.REACT_APP_API_BASE} origin=${safeOrigin(apiBase)}`,
 );
 console.log(
-  `  REACT_APP_SUPABASE_URL present=${checks.REACT_APP_SUPABASE_URL} origin=${safeOrigin(supabaseUrl)}`,
+  `  REACT_APP_SUPABASE_URL present=${checks.REACT_APP_SUPABASE_URL} source=${supabaseUrlSource} origin=${safeOrigin(supabaseUrl)}`,
 );
 console.log(
   `  REACT_APP_SUPABASE_PUBLISHABLE_KEY_OR_ANON_KEY present=${checks.REACT_APP_SUPABASE_PUBLISHABLE_KEY_OR_ANON_KEY}`,
@@ -64,7 +67,7 @@ if (missing.length || invalidUrls.length) {
     console.error(`Invalid URL values: ${invalidUrls.join(", ")}`);
   }
   console.error(
-    "Set these on the exact Netlify site with Builds scope and Production context, then trigger a new production build.",
+    "Set the missing values on the exact Netlify site for all scopes/contexts, then trigger a new production build.",
   );
   process.exit(2);
 }
