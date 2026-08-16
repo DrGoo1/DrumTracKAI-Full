@@ -1,6 +1,14 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = String(process.env.REACT_APP_SUPABASE_URL || "").trim();
+// The project URL is public browser configuration, not a secret. Keeping a
+// repository default prevents a broken reviewer build when Netlify omits the
+// corresponding build variable. The publishable key must still come from the
+// deployment environment.
+const DEFAULT_SUPABASE_URL = "https://uytugrruofqzdjpxkhet.supabase.co";
+
+const supabaseUrl = String(
+  process.env.REACT_APP_SUPABASE_URL || DEFAULT_SUPABASE_URL,
+).trim();
 const supabasePublishableKey = String(
   process.env.REACT_APP_SUPABASE_PUBLISHABLE_KEY
     || process.env.REACT_APP_SUPABASE_ANON_KEY
