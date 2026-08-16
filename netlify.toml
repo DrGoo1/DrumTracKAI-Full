@@ -1,0 +1,13 @@
+[build]
+  base = "frontend"
+  command = "node scripts/verify-netlify-env.cjs && npm ci && npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "22"
+  CI = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
