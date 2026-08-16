@@ -6,6 +6,7 @@
 [build.environment]
   NODE_VERSION = "22"
   CI = "false"
+  REACT_APP_SUPABASE_URL = "https://uytugrruofqzdjpxkhet.supabase.co"
 
 [[redirects]]
   from = "/*"
