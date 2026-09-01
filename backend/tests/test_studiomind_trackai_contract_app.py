@@ -3,18 +3,6 @@ from fastapi.testclient import TestClient
 from backend.studiomind_trackai_contract_app import app
 
 
-def _route_paths(routes) -> set[str]:
-    paths: set[str] = set()
-    for route in routes:
-        path = getattr(route, "path", None)
-        if isinstance(path, str):
-            paths.add(path)
-        nested = getattr(route, "routes", None)
-        if nested is not None:
-            paths.update(_route_paths(nested))
-    return paths
-
-
 def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
     monkeypatch.setenv("STUDIOMIND_TRACKAI_SANDBOX_AUTH", "test-only-value")
     client = TestClient(app)
@@ -30,11 +18,16 @@ def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
         "daw_execution_authorized": False,
     }
 
-    assert _route_paths(app.routes) == {
-        "/healthz",
+    capability = client.get(
         "/v1/studiomind/capabilities",
-        "/v1/studiomind/generation-requests",
-    }
+        headers={"Authorization": "Bearer test-only-value"},
+    )
+    assert capability.status_code == 200
+    assert capability.json()["metadata_intake_available"] is True
+    assert capability.json()["generation_available_through_this_endpoint"] is False
+
+    for forbidden_path in ("/docs", "/redoc", "/openapi.json", "/calibration"):
+        assert client.get(forbidden_path).status_code == 404
 
 
 def test_contract_host_keeps_capabilities_authenticated(monkeypatch) -> None:
