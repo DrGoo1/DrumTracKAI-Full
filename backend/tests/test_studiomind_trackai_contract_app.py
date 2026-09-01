@@ -18,7 +18,9 @@ def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
         "daw_execution_authorized": False,
     }
 
-    assert {route.path for route in app.routes} == {
+    assert {
+        route.path for route in app.routes if isinstance(getattr(route, "path", None), str)
+    } == {
         "/healthz",
         "/v1/studiomind/capabilities",
         "/v1/studiomind/generation-requests",
