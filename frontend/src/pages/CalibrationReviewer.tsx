@@ -8,6 +8,7 @@ import {
   ReviewerDrummer,
   ReviewerIdentity,
   ReviewerNextState,
+  fetchCalibrationHealth,
   fetchNextReviewerState,
   fetchReviewerDrummers,
   fetchReviewerIdentity,
@@ -181,6 +182,12 @@ function RatingsPanel({
 
 export default function CalibrationReviewer() {
   const [session, setSession] = useState<Session | null>(null);
+  const [serviceState, setServiceState] = useState<
+    "checking" | "ready" | "disabled" | "unavailable"
+  >("checking");
+  const [serviceMessage, setServiceMessage] = useState(
+    "Checking calibration service readiness…",
+  );
   const [email, setEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [identity, setIdentity] = useState<ReviewerIdentity | null>(null);
@@ -238,6 +245,33 @@ export default function CalibrationReviewer() {
   }, [resetReview]);
 
   useEffect(() => clearPoll, [clearPoll]);
+
+  useEffect(() => {
+    let active = true;
+    fetchCalibrationHealth()
+      .then((health) => {
+        if (!active) return;
+        if (!health.enabled) {
+          setServiceState("disabled");
+          setServiceMessage(
+            "Calibration is temporarily paused while new listening trials are prepared.",
+          );
+          return;
+        }
+        setServiceState("ready");
+        setServiceMessage("Secure calibration service is available.");
+      })
+      .catch(() => {
+        if (!active) return;
+        setServiceState("unavailable");
+        setServiceMessage(
+          "Calibration is temporarily unavailable. No review data has been lost.",
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -368,7 +402,7 @@ export default function CalibrationReviewer() {
     event.preventDefault();
     setError("");
     setAuthMessage("");
-    if (!supabase) return;
+    if (!supabase || serviceState !== "ready") return;
     const redirectTo = `${window.location.origin}/calibration`;
     const { error: signInError } = await supabase.auth.signInWithOtp({
       email: email.trim(),
@@ -436,8 +470,22 @@ export default function CalibrationReviewer() {
         <h1 className="text-3xl font-semibold">DrumTracKAI Expert Calibration</h1>
         <p className="mt-3 text-slate-300">
           This invitation-only portal collects blinded evaluations from experienced drummers.
+          Your comparisons improve feel, dynamics, phrasing, and musical realism without
+          revealing which candidate uses the current model.
         </p>
-        <form className="mt-8 rounded-xl border border-slate-700 bg-slate-900 p-5" onSubmit={requestMagicLink}>
+        <div
+          className={`mt-6 rounded-lg border px-4 py-3 text-sm ${
+            serviceState === "ready"
+              ? "border-emerald-700 bg-emerald-950/40 text-emerald-200"
+              : serviceState === "checking"
+                ? "border-slate-700 bg-slate-900 text-slate-300"
+                : "border-amber-700 bg-amber-950/40 text-amber-200"
+          }`}
+          role="status"
+        >
+          {serviceMessage}
+        </div>
+        <form className="mt-5 rounded-xl border border-slate-700 bg-slate-900 p-5" onSubmit={requestMagicLink}>
           <label className="block text-sm font-medium text-slate-200">
             Reviewer email
             <input
@@ -449,8 +497,12 @@ export default function CalibrationReviewer() {
               onChange={(event) => setEmail(event.target.value)}
             />
           </label>
-          <button className="mt-4 rounded-md bg-cyan-600 px-4 py-2 font-semibold text-white hover:bg-cyan-500" type="submit">
-            Send secure sign-in link
+          <button
+            className="mt-4 rounded-md bg-cyan-600 px-4 py-2 font-semibold text-white enabled:hover:bg-cyan-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            type="submit"
+            disabled={serviceState !== "ready"}
+          >
+            {serviceState === "checking" ? "Checking service…" : "Send secure sign-in link"}
           </button>
           {authMessage && <p className="mt-3 text-sm text-emerald-300">{authMessage}</p>}
           {error && <p className="mt-3 text-sm text-red-300">{error}</p>}

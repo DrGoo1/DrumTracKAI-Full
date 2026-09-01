@@ -5,6 +5,15 @@ const API_BASE = resolveApiBaseNormalized();
 
 export type ReviewChoice = "A" | "B" | "tie" | "neither";
 
+export interface CalibrationHealth {
+  status: "ok";
+  version: string;
+  enabled: boolean;
+  internal_reviewers_enabled: boolean;
+  external_reviewers_enabled: boolean;
+  auto_queue_review_trials: boolean;
+}
+
 export interface CalibrationArtifact {
   artifact_id: string;
   artifact_type: string;
@@ -146,13 +155,43 @@ function errorDetail(body: any, statusCode: number): string {
   return `Calibration API returned HTTP ${statusCode}`;
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = 15000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Calibration service did not respond in time");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+export async function fetchCalibrationHealth(): Promise<CalibrationHealth> {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/calibration/v2/healthz`,
+    { headers: { Accept: "application/json" }, cache: "no-store" },
+    7000,
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(errorDetail(body, response.status));
+  return body as CalibrationHealth;
+}
+
 async function apiRequest<T>(
   session: Session,
   path: string,
   init: RequestInit = {},
   idempotencyKey?: string,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",

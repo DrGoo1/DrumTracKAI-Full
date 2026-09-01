@@ -676,7 +676,7 @@ const resolveArtifactSource = (artifact: AudioArtifactPayload): string | null =>
 };
 
 const formatPercent = (value?: number | null) => {
-  if (value == null) return '�';
+  if (value == null) return '—';
   return `${Math.round(value * 100)}%`;
 };
 
@@ -723,7 +723,7 @@ const labelize = (key: string) =>
     .replace('Fpm', 'FPM');
 
 const formatShare = (value?: number | null) => {
-  if (value == null) return '�';
+  if (value == null) return '—';
   return `${(value * 100).toFixed(1)}%`;
 };
 
@@ -1736,7 +1736,7 @@ const CalibrationLab: React.FC = () => {
               </span>
               <span className="inline-flex items-center gap-2 rounded-full border border-purple-500/40 bg-purple-500/10 px-3 py-1">
                 <Gauge className="h-3 w-3 text-amber-200" />
-                Metric tolerance target �10%
+                Metric tolerance target ±10%
               </span>
               <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1 text-amber-100">
                 <Activity className="h-3 w-3 text-amber-300" />
@@ -1824,7 +1824,7 @@ const CalibrationLab: React.FC = () => {
           <section className="space-y-4">
             {listLoading ? (
               <div className="rounded-3xl border border-purple-500/20 bg-purple-900/10 p-6 text-sm text-purple-100/70">
-                Loading roster�
+                Loading roster…
               </div>
             ) : listError ? (
               <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-100/90">
@@ -1899,12 +1899,12 @@ const CalibrationLab: React.FC = () => {
                 then compare target vs actual in the <em>Metrics</em> tab.
               </li>
               <li>
-                <span className="font-semibold text-amber-200">5.</span> Share qualitative feedback in the <em>Feedback</em> tab� focus on feel, fills, and balance observations.
+                <span className="font-semibold text-amber-200">5.</span> Share qualitative feedback in the <em>Feedback</em> tab—focus on feel, fills, and balance observations.
               </li>
             </ol>
             <p className="mt-4 text-xs italic text-purple-100/60">
               Producers: once a profile holds =80% metrics within tolerance and external feedback is positive, flip the
-              completion status to �ready� in the backend.
+              completion status to “ready” in the backend.
             </p>
           </section>
         </aside>
@@ -1912,7 +1912,7 @@ const CalibrationLab: React.FC = () => {
         <section className="space-y-8">
           <div className="rounded-3xl border border-purple-500/30 bg-purple-900/20 p-6">
             {detailLoading ? (
-              <div className="text-sm text-purple-100/70">Loading calibration detail�</div>
+              <div className="text-sm text-purple-100/70">Loading calibration detail…</div>
             ) : detailError ? (
               <div className="text-sm text-rose-100/80">{detailError}</div>
             ) : !detail ? (
@@ -1929,8 +1929,8 @@ const CalibrationLab: React.FC = () => {
                       )}
                     </div>
                     <p className="mt-2 text-xs text-purple-100/70">
-                      Last run: {formatDate(detail?.runHistory?.[0]?.started_at)} � Note count:{' '}
-                      {detail?.metrics?.note_count ?? '�'}
+                      Last run: {formatDate(detail?.runHistory?.[0]?.started_at)} • Note count:{' '}
+                      {detail?.metrics?.note_count ?? '—'}
                     </p>
                     <p className="mt-2 text-xs text-purple-100/70">
                       Assimilation: {assimilation?.ready_for_calibration ? 'Ready for calibration' : 'Needs processing'}
@@ -1955,7 +1955,7 @@ const CalibrationLab: React.FC = () => {
                       disabled={!hasPendingChanges || saving}
                       className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
                     >
-                      <Save className="h-4 w-4" /> {saving ? 'Saving�' : 'Save Adjustments'}
+                      <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save Adjustments'}
                     </button>
                     <button
                       type="button"
@@ -1964,7 +1964,7 @@ const CalibrationLab: React.FC = () => {
                       className="inline-flex items-center gap-2 rounded-full border border-amber-400/60 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/30"
                     >
                       <RefreshCcw className="h-4 w-4" />
-                      {generating ? 'Launching�' : assimilationReady ? 'Run Metrics Calibration' : 'Run Blocked'}
+                      {generating ? 'Launching…' : assimilationReady ? 'Run Metrics Calibration' : 'Run Blocked'}
                     </button>
                     <button
                       type="button"
@@ -1973,7 +1973,7 @@ const CalibrationLab: React.FC = () => {
                       className="inline-flex items-center gap-2 rounded-full border border-emerald-400/60 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30"
                     >
                       <Headphones className="h-4 w-4" />
-                      {listeningBusy ? 'Queuing�' : assimilationReady ? 'Queue Listening Item' : 'Listening Blocked'}
+                      {listeningBusy ? 'Queuing…' : assimilationReady ? 'Queue Listening Item' : 'Listening Blocked'}
                     </button>
                     <button
                       type="button"
@@ -2176,10 +2176,10 @@ const CalibrationLab: React.FC = () => {
                               return (
                                 <tr key={row.key}>
                                   <td className="px-4 py-3 font-medium text-white">{row.label}</td>
-                                  <td className="px-4 py-3">{actual != null ? actual.toFixed(3) : '�'}</td>
-                                  <td className="px-4 py-3">{target != null ? target.toFixed(3) : '�'}</td>
+                                  <td className="px-4 py-3">{actual != null ? actual.toFixed(3) : '—'}</td>
+                                  <td className="px-4 py-3">{target != null ? target.toFixed(3) : '—'}</td>
                                   <td className="px-4 py-3">
-                                    {diff != null ? formatPercent(diff) : '�'}
+                                    {diff != null ? formatPercent(diff) : '—'}
                                   </td>
                                 </tr>
                               );
@@ -2235,8 +2235,8 @@ const CalibrationLab: React.FC = () => {
                                   {run.error_message || run.delta_summary || 'Not provided'}
                                 </div>
                                 <div className="flex flex-wrap gap-3 text-purple-100/70">
-                                  <span>Notes: {run.note_count ?? '�'}</span>
-                                  <span>FPM: {run.fills_per_minute?.toFixed(2) ?? '�'}</span>
+                                  <span>Notes: {run.note_count ?? '—'}</span>
+                                  <span>FPM: {run.fills_per_minute?.toFixed(2) ?? '—'}</span>
                                 </div>
                               </div>
                             </div>
@@ -2309,7 +2309,7 @@ const CalibrationLab: React.FC = () => {
                         disabled={feedbackSubmitting}
                         className="mt-4 inline-flex items-center gap-2 rounded-full border border-purple-500/40 bg-gradient-to-r from-purple-500 to-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-purple-900/40 transition hover:shadow-amber-500/30"
                       >
-                        <Users className="h-4 w-4" /> {feedbackSubmitting ? 'Sending�' : 'Submit Feedback'}
+                        <Users className="h-4 w-4" /> {feedbackSubmitting ? 'Sending…' : 'Submit Feedback'}
                       </button>
                     </form>
                   </div>

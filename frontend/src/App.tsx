@@ -9,6 +9,9 @@ import CalibrationLab from './pages/CalibrationLab';
 import CalibrationReviewer from './pages/CalibrationReviewer';
 import './App.css';
 
+const legacyCalibrationAdminEnabled =
+  process.env.REACT_APP_ENABLE_LEGACY_CALIBRATION_ADMIN === 'true';
+
 function App() {
   return (
     <Router>
@@ -39,7 +42,14 @@ function App() {
         <Routes>
           <Route path="/upload" element={<UploadWithWaveform />} />
           <Route path="/calibration" element={<CalibrationReviewer />} />
-          <Route path="/calibration-admin" element={<CalibrationLab />} />
+          <Route
+            path="/calibration-admin"
+            element={
+              legacyCalibrationAdminEnabled
+                ? <CalibrationLab />
+                : <Navigate to="/calibration" replace />
+            }
+          />
           <Route path="/" element={<WebDAWAppV3 />} />
           <Route path="/v3" element={<Navigate to="/" replace />} />
           <Route path="/legacy" element={<WebDAWApp />} />

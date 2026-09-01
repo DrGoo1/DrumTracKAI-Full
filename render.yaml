@@ -1,27 +1,115 @@
+# Strict, fail-closed Calibration v2 topology.
+# Automatic deployment stays disabled until the model, renderer, storage, and
+# canonical Postgres readiness checks in the recovery runbook all pass.
 services:
   - type: web
-    name: drumtrackai-api
+    name: drumtrackai-generation-api
     env: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    branch: main
+    autoDeploy: false
+    buildCommand: pip install -r requirements-generation.txt
     startCommand: uvicorn llm_service.app:app --host 0.0.0.0 --port $PORT
-    autoDeploy: true
+    healthCheckPath: /healthz
     envVars:
-      - key: LOG_LEVEL
-        value: INFO
-      - key: CORS_ALLOW_ORIGINS
-        value: https://calibrate.example.com
-      - key: AWS_S3_BUCKET
+      - key: APP_ENV
+        value: staging
+      - key: LLM_STRICT_READINESS
+        value: "true"
+      - key: INFERENCE_BACKEND
         sync: false
-      - key: AWS_REGION
+      - key: ACTIVE_MODEL_PATH
         sync: false
-      - key: DRUMTRACKAI_DB_PATH
+      - key: ACTIVE_MODEL_JSON
         sync: false
+      - key: ONNX_MODEL_PATH
+        sync: false
+
+  - type: web
+    name: drumtrackai-calibration-api2
+    env: python
+    plan: starter
+    branch: main
+    autoDeploy: false
+    buildCommand: pip install -r requirements-generation.txt
+    startCommand: uvicorn backend.calibration_api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /calibration/v2/healthz
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DB_BACKEND
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: CALIBRATION_V2_ENABLED
+        value: "true"
+      - key: CALIBRATION_INTERNAL_REVIEWERS_ENABLED
+        value: "true"
+      - key: CALIBRATION_EXTERNAL_REVIEWERS_ENABLED
+        value: "false"
+      - key: CALIBRATION_AUTO_QUEUE_REVIEW_TRIALS
+        value: "false"
+      - key: CALIBRATION_GENERATION_MODE
+        value: http
+      - key: CALIBRATION_GENERATION_API_BASE
+        sync: false
+      - key: ALLOW_UNVERIFIED_JWT
+        value: "false"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_JWKS_URL
         sync: false
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
       - key: SUPABASE_JWT_AUDIENCE
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        value: https://drumtrackai.netlify.app
+
+  - type: worker
+    name: drumtrackai-calibration-render-worker
+    env: python
+    plan: starter
+    branch: main
+    autoDeploy: false
+    buildCommand: pip install -r requirements-generation.txt
+    startCommand: python -m backend.workers.calibration_render_worker
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DB_BACKEND
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: CALIBRATION_RENDER_WORKER_DB_FINGERPRINT
+        sync: false
+      - key: CALIBRATION_RENDER_WORKER_COMMAND
+        sync: false
+      - key: CALIBRATION_RENDERER_VERSION
+        sync: false
+      - key: CALIBRATION_ALLOWED_RENDERERS
+        sync: false
+      - key: CALIBRATION_SAMPLE_PACK_VERSION
+        sync: false
+      - key: CALIBRATION_ALLOWED_SAMPLE_PACKS
+        sync: false
+      - key: CALIBRATION_SAMPLE_MANIFEST_URI
+        sync: false
+      - key: CALIBRATION_RENDER_UPLOAD_ENABLED
+        value: "true"
+      - key: CALIBRATION_RENDER_OUTPUT_PREFIX
+        value: calibration/v2
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
         sync: false

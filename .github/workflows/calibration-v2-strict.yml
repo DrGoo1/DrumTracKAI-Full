@@ -3,6 +3,7 @@ name: Calibration v2 strict validation
 on:
   push:
     branches:
+      - main
       - sync/render-main
     paths:
       - "backend/calibration_v2_api.py"
@@ -15,9 +16,14 @@ on:
       - "backend/tests/test_calibration_production_engine.py"
       - "frontend/package.json"
       - "frontend/package-lock.json"
+      - "frontend/scripts/verify-netlify-env.cjs"
+      - "frontend/src/App.tsx"
       - "frontend/src/api/calibrationV2.ts"
       - "frontend/src/lib/supabaseClient.ts"
       - "frontend/src/pages/CalibrationReviewer.tsx"
+      - "frontend/src/pages/CalibrationLab.tsx"
+      - "netlify.toml"
+      - "render.yaml"
       - "scripts/calibration_*.py"
       - "scripts/verify_calibration_*.py"
       - "scripts/publish_admin_assimilation_to_postgres.py"
