@@ -28,3 +28,13 @@ This v1.1 envelope is intended to become a shared TrackAI contract. Future
 Bass, Guitar, Keys, Horns, and Vocal products should reuse the envelope and
 receipt schemas while narrowing their own accepted `production_role` and
 artifact capabilities.
+
+## Isolated loopback host
+
+`backend.studiomind_trackai_contract_app:app` is a deliberately minimal ASGI
+host for cross-repository certification. It mounts only `/healthz`, the
+authenticated capability route, and the authenticated metadata-intake route.
+It does not import the calibration application, database, production model,
+render worker, artifact service, or DAW integration. A successful loopback
+certification therefore proves protocol compatibility only; it cannot be read
+as generation, deployment, artifact, or musical-quality evidence.
