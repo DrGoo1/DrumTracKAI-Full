@@ -34,6 +34,7 @@ from backend.calibration_v2_api import router as calibration_v2_router
 from backend.app.assimilation.api.routes_drummer_generation import (
     router as assimilation_generation_router,
 )
+from backend.studiomind_trackai_api import router as studiomind_trackai_router
 
 if TYPE_CHECKING:
     from admin.services.central_database_service import (
@@ -3895,3 +3896,4 @@ async def submit_feedback(
 app.include_router(router)
 app.include_router(calibration_v2_router)
 app.include_router(assimilation_generation_router)
+app.include_router(studiomind_trackai_router)
