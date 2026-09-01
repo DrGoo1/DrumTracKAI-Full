@@ -1,0 +1,38 @@
+name: StudioMind TrackAI contract
+
+on:
+  pull_request:
+    paths:
+      - "backend/studiomind_trackai_api.py"
+      - "backend/calibration_api.py"
+      - "backend/tests/test_studiomind_trackai_api.py"
+      - "requirements-dev.txt"
+      - ".github/workflows/studiomind-trackai-contract.yml"
+  push:
+    branches:
+      - main
+      - sync/render-main
+    paths:
+      - "backend/studiomind_trackai_api.py"
+      - "backend/calibration_api.py"
+      - "backend/tests/test_studiomind_trackai_api.py"
+      - "requirements-dev.txt"
+      - ".github/workflows/studiomind-trackai-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements-dev.txt pytest
+      - run: python -m compileall -q backend
+      - run: python -m pytest backend/tests/test_studiomind_trackai_api.py -q
