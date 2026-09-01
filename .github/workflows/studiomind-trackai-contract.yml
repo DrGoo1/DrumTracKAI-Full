@@ -12,6 +12,7 @@ on:
     branches:
       - main
       - sync/render-main
+      - "agent/chatgpt-**"
     paths:
       - "backend/studiomind_trackai_api.py"
       - "backend/calibration_api.py"
