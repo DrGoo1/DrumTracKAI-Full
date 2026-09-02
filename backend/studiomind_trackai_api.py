@@ -129,6 +129,7 @@ class TrackAICapability(ContractModel):
     metadata_intake_available: Literal[True] = True
     generation_plan_preparation_available: Literal[True] = True
     generation_available_through_this_endpoint: Literal[False] = False
+    generation_execution_requires_separate_endpoint: Literal[True] = True
     artifact_access_available: Literal[False] = False
     automatic_dispatch_authorized: Literal[False] = False
 

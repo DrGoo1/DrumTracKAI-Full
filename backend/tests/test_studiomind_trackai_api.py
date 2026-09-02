@@ -162,6 +162,7 @@ def test_capability_is_drum_scoped_and_non_executing(monkeypatch) -> None:
     assert capability["production_roles"] == ["drums", "percussion"]
     assert capability["generation_plan_preparation_available"] is True
     assert capability["generation_available_through_this_endpoint"] is False
+    assert capability["generation_execution_requires_separate_endpoint"] is True
     assert capability["artifact_access_available"] is False
     assert capability["human_review_required"] is True
     assert capability["prohibited_imitation_required"] is True
