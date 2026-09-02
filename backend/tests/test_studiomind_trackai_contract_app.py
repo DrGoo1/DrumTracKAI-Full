@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from backend.studiomind_trackai_contract_app import app
 
 
-def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
+def test_contract_host_exposes_only_validation_and_plan_boundaries(monkeypatch) -> None:
     monkeypatch.setenv("STUDIOMIND_TRACKAI_SANDBOX_AUTH", "test-only-value")
     client = TestClient(app)
 
@@ -13,6 +13,7 @@ def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
         "schema_version": "1.1.0",
         "service": "drumtrackai-studiomind-contract",
         "metadata_intake_available": True,
+        "generation_plan_preparation_available": True,
         "generation_authorized": False,
         "artifact_access_authorized": False,
         "daw_execution_authorized": False,
@@ -24,6 +25,7 @@ def test_contract_host_exposes_only_metadata_boundary(monkeypatch) -> None:
     )
     assert capability.status_code == 200
     assert capability.json()["metadata_intake_available"] is True
+    assert capability.json()["generation_plan_preparation_available"] is True
     assert capability.json()["generation_available_through_this_endpoint"] is False
 
     for forbidden_path in ("/docs", "/redoc", "/openapi.json", "/calibration"):

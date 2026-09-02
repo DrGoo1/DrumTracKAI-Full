@@ -5,8 +5,9 @@ StudioMind Full Production dispatch path:
 
 - `GET /v1/studiomind/capabilities`
 - `POST /v1/studiomind/generation-requests`
+- `POST /v1/studiomind/generation-plans`
 
-Both routes require a bearer value that is resolved at request time from
+All three routes require a bearer value that is resolved at request time from
 `STUDIOMIND_TRACKAI_SANDBOX_AUTH`. The value is not stored in source, request
 models, receipts, or logs.
 
@@ -33,8 +34,39 @@ artifact capabilities.
 
 `backend.studiomind_trackai_contract_app:app` is a deliberately minimal ASGI
 host for cross-repository certification. It mounts only `/healthz`, the
-authenticated capability route, and the authenticated metadata-intake route.
+authenticated capability and metadata-intake routes, and authenticated
+non-executing plan preparation.
 It does not import the calibration application, database, production model,
 render worker, artifact service, or DAW integration. A successful loopback
 certification therefore proves protocol compatibility only; it cannot be read
 as generation, deployment, artifact, or musical-quality evidence.
+
+## Generation-plan preparation
+
+The generation-plan route is the next bounded provider layer. It accepts the
+already validated v1.1 envelope and binds it to:
+
+- exact ordered song sections with bar counts and energy;
+- one tempo and time signature within the reviewed request constraints;
+- a mandatory deterministic seed;
+- the exact parent-artifact hashes from the StudioMind request; and
+- a digest-bound commercial-rights manifest that forbids performer-identity
+  and named-artist generation targets.
+
+The provider independently recomputes the validation job ID, rights-manifest
+digest, and generation-plan digest. Arrangement identity, section order,
+tempo, or source-rights drift fails closed.
+
+A successful plan response says `prepared_for_human_review`. It includes the
+sanitized DrumTracKAI provider payload and a stable plan digest, but retains:
+
+- `generation_authorized=false`;
+- `artifact_ready=false`;
+- `candidate_commit_authorized=false`; and
+- `automatic_retry_authorized=false`.
+
+No model, renderer, calibration record, artifact store, StudioMind project, or
+DAW is touched by plan preparation. A later execution task must require a
+short-lived human approval bound to the exact plan digest, a durable replay
+guard, the certified production model, and a separately reviewed artifact
+lifecycle before it may invoke generation.
