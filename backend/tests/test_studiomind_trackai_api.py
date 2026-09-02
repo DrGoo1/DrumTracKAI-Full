@@ -12,6 +12,7 @@ from backend.studiomind_trackai_api import (
     router,
     stable_fingerprint,
 )
+from backend.studiomind_trackai_generation_api import router as generation_plan_router
 
 
 AUTH_VALUE = "non-production-test-value"
@@ -21,6 +22,7 @@ HEX = "a" * 64
 def _client() -> TestClient:
     app = FastAPI()
     app.include_router(router)
+    app.include_router(generation_plan_router)
     return TestClient(app)
 
 
@@ -158,6 +160,7 @@ def test_capability_is_drum_scoped_and_non_executing(monkeypatch) -> None:
     assert response.status_code == 200
     capability = response.json()
     assert capability["production_roles"] == ["drums", "percussion"]
+    assert capability["generation_plan_preparation_available"] is True
     assert capability["generation_available_through_this_endpoint"] is False
     assert capability["artifact_access_available"] is False
     assert capability["human_review_required"] is True

@@ -5,9 +5,12 @@ on:
     paths:
       - "backend/studiomind_trackai_api.py"
       - "backend/studiomind_trackai_contract_app.py"
+      - "backend/studiomind_trackai_generation_api.py"
+      - "backend/services/studiomind_trackai_generation.py"
       - "backend/calibration_api.py"
       - "backend/tests/test_studiomind_trackai_api.py"
       - "backend/tests/test_studiomind_trackai_contract_app.py"
+      - "backend/tests/test_studiomind_trackai_generation.py"
       - "requirements-dev.txt"
       - ".github/workflows/studiomind-trackai-contract.yml"
   push:
@@ -18,9 +21,12 @@ on:
     paths:
       - "backend/studiomind_trackai_api.py"
       - "backend/studiomind_trackai_contract_app.py"
+      - "backend/studiomind_trackai_generation_api.py"
+      - "backend/services/studiomind_trackai_generation.py"
       - "backend/calibration_api.py"
       - "backend/tests/test_studiomind_trackai_api.py"
       - "backend/tests/test_studiomind_trackai_contract_app.py"
+      - "backend/tests/test_studiomind_trackai_generation.py"
       - "requirements-dev.txt"
       - ".github/workflows/studiomind-trackai-contract.yml"
 
@@ -45,4 +51,5 @@ jobs:
       - run: >-
           python -m pytest
           backend/tests/test_studiomind_trackai_api.py
-          backend/tests/test_studiomind_trackai_contract_app.py -q
+          backend/tests/test_studiomind_trackai_contract_app.py
+          backend/tests/test_studiomind_trackai_generation.py -q

@@ -1,7 +1,7 @@
 """Minimal ASGI host for the StudioMind/DrumTracKAI contract boundary.
 
-This application intentionally mounts only the metadata-validation routes. It
-does not import calibration, model, database, rendering, or artifact services.
+This application mounts metadata validation and non-executing plan preparation.
+It does not import calibration, model, database, rendering, or artifact services.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
 
 from backend.studiomind_trackai_api import SCHEMA_VERSION, router
+from backend.studiomind_trackai_generation_api import router as generation_plan_router
 
 
 class ContractHealth(BaseModel):
@@ -21,6 +22,7 @@ class ContractHealth(BaseModel):
         "drumtrackai-studiomind-contract"
     )
     metadata_intake_available: Literal[True] = True
+    generation_plan_preparation_available: Literal[True] = True
     generation_authorized: Literal[False] = False
     artifact_access_authorized: Literal[False] = False
     daw_execution_authorized: Literal[False] = False
@@ -40,6 +42,7 @@ def create_contract_app() -> FastAPI:
         return ContractHealth()
 
     application.include_router(router)
+    application.include_router(generation_plan_router)
     return application
 
 

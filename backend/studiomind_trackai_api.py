@@ -127,6 +127,7 @@ class TrackAICapability(ContractModel):
     prohibited_imitation_required: Literal[True] = True
     human_review_required: Literal[True] = True
     metadata_intake_available: Literal[True] = True
+    generation_plan_preparation_available: Literal[True] = True
     generation_available_through_this_endpoint: Literal[False] = False
     artifact_access_available: Literal[False] = False
     automatic_dispatch_authorized: Literal[False] = False
@@ -157,6 +158,23 @@ def stable_fingerprint(value: Any) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def expected_validation_job_id(payload: StudioMindGenerationEnvelope) -> str:
+    """Return the stable job identity for one exactly bound metadata envelope."""
+
+    request = payload.generation_request
+    job_digest = stable_fingerprint(
+        {
+            "contract": SCHEMA_VERSION,
+            "intent_id": payload.intent_id,
+            "request_id": request.request_id,
+            "request_fingerprint": request.request_fingerprint,
+            "payload_digest": payload.payload_digest,
+            "production_role": payload.production_role,
+        }
+    )
+    return f"drumtrackai-validation-{job_digest[:32]}"
 
 
 def _require_bearer(authorization: str | None) -> None:
@@ -202,18 +220,8 @@ async def validate_generation_request(
 ) -> MetadataValidationReceipt:
     _require_bearer(authorization)
     request = payload.generation_request
-    job_digest = stable_fingerprint(
-        {
-            "contract": SCHEMA_VERSION,
-            "intent_id": payload.intent_id,
-            "request_id": request.request_id,
-            "request_fingerprint": request.request_fingerprint,
-            "payload_digest": payload.payload_digest,
-            "production_role": payload.production_role,
-        }
-    )
     return MetadataValidationReceipt(
-        job_id=f"drumtrackai-validation-{job_digest[:32]}",
+        job_id=expected_validation_job_id(payload),
         intent_id=payload.intent_id,
         request_id=request.request_id,
         request_fingerprint=request.request_fingerprint,
@@ -230,6 +238,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "StudioMindGenerationEnvelope",
     "TrackAICapability",
+    "expected_validation_job_id",
     "router",
     "stable_fingerprint",
 ]
