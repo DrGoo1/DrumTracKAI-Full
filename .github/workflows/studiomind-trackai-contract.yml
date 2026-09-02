@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "backend/studiomind_trackai_api.py"
+      - "backend/studiomind_trackai_contract_app.py"
       - "backend/calibration_api.py"
       - "backend/tests/test_studiomind_trackai_api.py"
+      - "backend/tests/test_studiomind_trackai_contract_app.py"
       - "requirements-dev.txt"
       - ".github/workflows/studiomind-trackai-contract.yml"
   push:
@@ -15,8 +17,10 @@ on:
       - "agent/chatgpt-**"
     paths:
       - "backend/studiomind_trackai_api.py"
+      - "backend/studiomind_trackai_contract_app.py"
       - "backend/calibration_api.py"
       - "backend/tests/test_studiomind_trackai_api.py"
+      - "backend/tests/test_studiomind_trackai_contract_app.py"
       - "requirements-dev.txt"
       - ".github/workflows/studiomind-trackai-contract.yml"
 
@@ -38,4 +42,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
           fastapi==0.110.0 pydantic==2.10.6 python-multipart pytest
       - run: python -m compileall -q backend
-      - run: python -m pytest backend/tests/test_studiomind_trackai_api.py -q
+      - run: >-
+          python -m pytest
+          backend/tests/test_studiomind_trackai_api.py
+          backend/tests/test_studiomind_trackai_contract_app.py -q
