@@ -38,6 +38,9 @@ from backend.studiomind_trackai_api import router as studiomind_trackai_router
 from backend.studiomind_trackai_generation_api import (
     router as studiomind_trackai_generation_router,
 )
+from backend.studiomind_trackai_execution_api import (
+    router as studiomind_trackai_execution_router,
+)
 
 if TYPE_CHECKING:
     from admin.services.central_database_service import (
@@ -3901,3 +3904,4 @@ app.include_router(calibration_v2_router)
 app.include_router(assimilation_generation_router)
 app.include_router(studiomind_trackai_router)
 app.include_router(studiomind_trackai_generation_router)
+app.include_router(studiomind_trackai_execution_router)

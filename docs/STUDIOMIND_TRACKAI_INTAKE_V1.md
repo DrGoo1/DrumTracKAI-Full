@@ -6,8 +6,9 @@ StudioMind Full Production dispatch path:
 - `GET /v1/studiomind/capabilities`
 - `POST /v1/studiomind/generation-requests`
 - `POST /v1/studiomind/generation-plans`
+- `POST /v1/studiomind/generation-executions`
 
-All three routes require a bearer value that is resolved at request time from
+All four routes require a bearer value that is resolved at request time from
 `STUDIOMIND_TRACKAI_SANDBOX_AUTH`. The value is not stored in source, request
 models, receipts, or logs.
 
@@ -70,3 +71,30 @@ DAW is touched by plan preparation. A later execution task must require a
 short-lived human approval bound to the exact plan digest, a durable replay
 guard, the certified production model, and a separately reviewed artifact
 lifecycle before it may invoke generation.
+
+## One-time candidate execution
+
+The execution route is present but fails closed unless all of the following
+are explicitly configured:
+
+- `STUDIOMIND_TRACKAI_GENERATION_ENABLED=true`;
+- `DRUMTRACKAI_GENERATION_API_BASE` points to loopback HTTP or HTTPS; and
+- `STUDIOMIND_TRACKAI_REPLAY_DB_PATH` is an absolute path whose parent exists.
+
+Execution requires a digest-valid approval receipt with a maximum lifetime of
+15 minutes. The approval must identify the exact plan ID and digest, state that
+human review occurred, prohibit automatic execution, and be single-use. Before
+the production endpoint is called, its approval ID, approval digest, and plan
+digest are atomically consumed in SQLite. Failed provider calls therefore do
+not become implicit retries; a new deterministic plan and reviewed approval
+are required.
+
+The existing DrumTracKAI `/v1/generate-drums` route receives only a bounded,
+deterministically compiled payload. The returned artifact must be valid base64,
+begin with a Standard MIDI File header, and remain within the configured size
+limit. Only allowlisted provider metadata is returned.
+
+A successful response creates a candidate for listening review. It does not
+authorize candidate commitment, automatic retry, DAW execution, or acceptance
+of the musical result. Audio rendering and durable candidate storage remain
+separate later gates.
