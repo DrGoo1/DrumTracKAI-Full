@@ -353,6 +353,42 @@ def bass_feature_artifacts(
     return {"status": "ok", "items": store.list_payloads(), "execution_authorized": False}
 
 
+def _bass_calibration_status_payload(root: str) -> Dict[str, Any]:
+    from backend.trackai_platform.bass_calibration_service import JsonBassCalibrationStore
+    store = JsonBassCalibrationStore(root)
+    trials = store.trials()
+    profile_ids = sorted({str(x.get("performer_profile_id") or "").strip() for x in trials if str(x.get("performer_profile_id") or "").strip()})
+    return {
+        "status": "ok",
+        "items": [
+            {
+                "performer_profile_id": summary.performer_profile_id,
+                "trial_count": summary.trial_count,
+                "judgment_count": summary.judgment_count,
+                "mean_confidence": summary.mean_confidence,
+                "preferred_consistency": summary.preferred_consistency,
+                "rubric_agreement": summary.rubric_agreement,
+                "calibration_confidence": summary.calibration_confidence,
+                "calibration_state": summary.calibration_state,
+                "blockers": list(summary.blockers),
+                "execution_authorized": False,
+            }
+            for summary in (store.summary(profile_id) for profile_id in profile_ids)
+        ],
+        "trial_count": len(trials),
+        "execution_authorized": False,
+        "model_promotion_authorized": False,
+    }
+
+
+@router.get("/admin/bass/calibration-status")
+def bass_calibration_status(
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    root = os.getenv("BASSTRACKAI_CALIBRATION_ROOT", "data/trackai/bass/calibration")
+    return _bass_calibration_status_payload(root)
+
+
 @router.get("/platform/instruments")
 def platform_instruments(context=Depends(_require_reviewer_context)) -> Dict[str, Any]:
     """Return the shared TracKAI instrument registry without granting generation authority."""

@@ -837,6 +837,7 @@ const CalibrationLab: React.FC = () => {
   const [drummers, setDrummers] = useState<DrummerListItem[]>([]);
   const [selectedInstrument, setSelectedInstrument] = useState<'drums' | 'bass'>('drums');
   const [bassFeatureArtifacts, setBassFeatureArtifacts] = useState<any[]>([]);
+  const [bassCalibrationStatus, setBassCalibrationStatus] = useState<any[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | CompletionStatus>('all');
@@ -873,9 +874,16 @@ const CalibrationLab: React.FC = () => {
   const artifactPollStateRef = useRef<{ itemId: string | null; attempts: number }>({ itemId: null, attempts: 0 });
   useEffect(() => {
     if (selectedInstrument !== 'bass') return;
-    void axios.get(`${API_BASE}/calibration/v2/admin/bass/feature-artifacts`).then((response) => {
-      setBassFeatureArtifacts(response.data?.items || []);
-    }).catch(() => setBassFeatureArtifacts([]));
+    void Promise.all([
+      axios.get(`${API_BASE}/calibration/v2/admin/bass/feature-artifacts`),
+      axios.get(`${API_BASE}/calibration/v2/admin/bass/calibration-status`),
+    ]).then(([features, calibration]) => {
+      setBassFeatureArtifacts(features.data?.items || []);
+      setBassCalibrationStatus(calibration.data?.items || []);
+    }).catch(() => {
+      setBassFeatureArtifacts([]);
+      setBassCalibrationStatus([]);
+    });
   }, [selectedInstrument]);
 
   const artifactPollBusyRef = useRef(false);
@@ -1744,6 +1752,19 @@ const CalibrationLab: React.FC = () => {
             <h2 className="text-lg font-semibold">Dataset provisioning</h2>
             <p className="mt-2 text-sm text-slate-300">The backend now accepts authenticated Bass source evidence at <code>/calibration/v2/admin/platform/bass/sources</code> and reports performer dataset readiness through the shared platform API. No production Bass dataset has been promoted yet.</p>
             <div className="mt-4 rounded-lg border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-100">Execution authority: disabled · Model promotion: blocked pending human-reviewed source inventory and live calibration.</div>
+          </section>
+          <section className="mt-6 rounded-xl border border-cyan-900 bg-cyan-950/10 p-5">
+            <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Blind calibration status</h2><p className="mt-1 text-xs text-slate-400">Research trials, reviewer judgments, rubric agreement, and calibration confidence. No row grants generation or model-promotion authority.</p></div><span className="rounded-full border border-amber-700 px-3 py-1 text-xs text-amber-200">Execution disabled</span></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {bassCalibrationStatus.length === 0 ? <div className="rounded-lg border border-slate-800 bg-black/20 p-4 text-sm text-slate-400">No persisted Bass calibration trials yet.</div> : bassCalibrationStatus.map((item) => (
+                <div key={item.performer_profile_id} className="rounded-lg border border-slate-800 bg-black/20 p-4 text-sm text-slate-300">
+                  <div className="flex items-center justify-between"><strong className="text-slate-100">{item.performer_profile_id}</strong><span className="text-xs uppercase tracking-wide text-cyan-300">{item.calibration_state}</span></div>
+                  <div className="mt-2 text-xs">Trials {item.trial_count} · Judgments {item.judgment_count} · Confidence {Math.round((item.calibration_confidence || 0) * 100)}%</div>
+                  <div className="mt-1 text-xs text-slate-500">Rubric agreement {Math.round((item.rubric_agreement || 0) * 100)}% · Preference consistency {Math.round((item.preferred_consistency || 0) * 100)}%</div>
+                  {(item.blockers || []).length > 0 && <div className="mt-2 text-xs text-amber-300">Blocked: {(item.blockers || []).join(' · ')}</div>}
+                </div>
+              ))}
+            </div>
           </section>
           <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
             <h2 className="text-lg font-semibold">Persisted feature artifacts</h2>
