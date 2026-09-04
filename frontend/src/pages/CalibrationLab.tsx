@@ -835,6 +835,9 @@ const extractItemIdFromGenerateError = (error: unknown): string | null => {
 
 const CalibrationLab: React.FC = () => {
   const [drummers, setDrummers] = useState<DrummerListItem[]>([]);
+  const [selectedInstrument, setSelectedInstrument] = useState<'drums' | 'bass'>('drums');
+  const [bassFeatureArtifacts, setBassFeatureArtifacts] = useState<any[]>([]);
+  const [bassCalibrationStatus, setBassCalibrationStatus] = useState<any[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | CompletionStatus>('all');
@@ -869,6 +872,20 @@ const CalibrationLab: React.FC = () => {
     value: null,
   });
   const artifactPollStateRef = useRef<{ itemId: string | null; attempts: number }>({ itemId: null, attempts: 0 });
+  useEffect(() => {
+    if (selectedInstrument !== 'bass') return;
+    void Promise.all([
+      axios.get(`${API_BASE}/calibration/v2/admin/bass/feature-artifacts`),
+      axios.get(`${API_BASE}/calibration/v2/admin/bass/calibration-status`),
+    ]).then(([features, calibration]) => {
+      setBassFeatureArtifacts(features.data?.items || []);
+      setBassCalibrationStatus(calibration.data?.items || []);
+    }).catch(() => {
+      setBassFeatureArtifacts([]);
+      setBassCalibrationStatus([]);
+    });
+  }, [selectedInstrument]);
+
   const artifactPollBusyRef = useRef(false);
   const [artifactPollInfo, setArtifactPollInfo] = useState<{ active: boolean; attempts: number; lastCheckedAt: number | null }>(
     {
@@ -1712,6 +1729,61 @@ const CalibrationLab: React.FC = () => {
     return `${apiBase.replace(/\/$/, '')}/calibration/analysis/${encodeURIComponent(sourceAnalysisId)}`;
   }, [sourceAnalysisId]);
 
+  if (selectedInstrument === 'bass') {
+    return (
+      <div className="min-h-screen bg-[#09031a] p-6 text-white">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/80">Shared TracKAI Admin</p>
+              <h1 className="mt-2 text-4xl font-black">BassTracKAI Research Workspace</h1>
+              <p className="mt-3 max-w-3xl text-slate-300">Source evidence, assimilation readiness, and generation-plan preparation use the same research control plane as DrumTracKAI. Bass execution remains disabled until calibration and provider certification are complete.</p>
+            </div>
+            <select value={selectedInstrument} onChange={(event) => setSelectedInstrument(event.target.value as 'drums' | 'bass')} className="rounded-lg border border-cyan-700 bg-slate-950 px-4 py-2">
+              <option value="drums">DrumTracKAI</option><option value="bass">BassTracKAI</option>
+            </select>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {[['Source intake','Provenance-bound bass performance observations with versioned extraction evidence.'],['Assimilation','Minimum-source, human-review, and extractor-consistency gates must all pass.'],['Generation','Plans bind harmony, kick events, sections, role, density, articulation, provider, and model versions.']].map(([title,body]) => (
+              <section key={title} className="rounded-xl border border-cyan-900 bg-cyan-950/20 p-5"><h2 className="font-semibold text-cyan-100">{title}</h2><p className="mt-2 text-sm text-slate-300">{body}</p></section>
+            ))}
+          </div>
+          <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+            <h2 className="text-lg font-semibold">Dataset provisioning</h2>
+            <p className="mt-2 text-sm text-slate-300">The backend now accepts authenticated Bass source evidence at <code>/calibration/v2/admin/platform/bass/sources</code> and reports performer dataset readiness through the shared platform API. No production Bass dataset has been promoted yet.</p>
+            <div className="mt-4 rounded-lg border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-100">Execution authority: disabled · Model promotion: blocked pending human-reviewed source inventory and live calibration.</div>
+          </section>
+          <section className="mt-6 rounded-xl border border-cyan-900 bg-cyan-950/10 p-5">
+            <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Blind calibration status</h2><p className="mt-1 text-xs text-slate-400">Research trials, reviewer judgments, rubric agreement, and calibration confidence. No row grants generation or model-promotion authority.</p></div><span className="rounded-full border border-amber-700 px-3 py-1 text-xs text-amber-200">Execution disabled</span></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {bassCalibrationStatus.length === 0 ? <div className="rounded-lg border border-slate-800 bg-black/20 p-4 text-sm text-slate-400">No persisted Bass calibration trials yet.</div> : bassCalibrationStatus.map((item) => (
+                <div key={item.performer_profile_id} className="rounded-lg border border-slate-800 bg-black/20 p-4 text-sm text-slate-300">
+                  <div className="flex items-center justify-between"><strong className="text-slate-100">{item.performer_profile_id}</strong><span className="text-xs uppercase tracking-wide text-cyan-300">{item.calibration_state}</span></div>
+                  <div className="mt-2 text-xs">Trials {item.trial_count} · Judgments {item.judgment_count} · Confidence {Math.round((item.calibration_confidence || 0) * 100)}%</div>
+                  <div className="mt-1 text-xs text-slate-500">Rubric agreement {Math.round((item.rubric_agreement || 0) * 100)}% · Preference consistency {Math.round((item.preferred_consistency || 0) * 100)}%</div>
+                  {(item.blockers || []).length > 0 && <div className="mt-2 text-xs text-amber-300">Blocked: {(item.blockers || []).join(' · ')}</div>}
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+            <h2 className="text-lg font-semibold">Persisted feature artifacts</h2>
+            <p className="mt-1 text-xs text-slate-400">{bassFeatureArtifacts.length} source artifact{bassFeatureArtifacts.length === 1 ? '' : 's'} available.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {bassFeatureArtifacts.slice(0, 8).map((artifact) => (
+                <div key={artifact.source_id} className="rounded-lg border border-slate-800 bg-black/20 p-3 text-xs text-slate-300">
+                  <div className="font-medium text-slate-100">{artifact.source_id}</div>
+                  <div className="mt-1">Events {artifact.features?.event_count ?? 0} · Kick lock {Math.round((artifact.features?.kick_lock_score ?? 0) * 100)}% · Chord tones {Math.round((artifact.features?.chord_tone_ratio ?? 0) * 100)}%</div>
+                  <div className="mt-1 text-slate-500">{(artifact.features?.technique_tags || []).join(' · ') || 'No technique tags yet'}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#09031a] text-white">
       <header className="relative overflow-hidden border-b border-purple-500/20 bg-gradient-to-br from-purple-950/80 via-purple-900/40 to-amber-900/20">
@@ -1721,6 +1793,7 @@ const CalibrationLab: React.FC = () => {
         </div>
         <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-6 py-14 md:flex-row md:items-center md:justify-between">
           <div className="max-w-3xl">
+            <div className="mb-4 flex items-center gap-3"><span className="text-xs uppercase tracking-[0.3em] text-purple-200/70">TracKAI workspace</span><select value={selectedInstrument} onChange={(event) => setSelectedInstrument(event.target.value as 'drums' | 'bass')} className="rounded-lg border border-purple-600 bg-purple-950 px-3 py-2 text-sm"><option value="drums">DrumTracKAI</option><option value="bass">BassTracKAI</option></select></div>
             <h1 className="text-5xl font-black leading-tight md:text-7xl">Drummer Calibration Lab</h1>
             <p className="mt-4 text-2xl font-bold leading-tight md:text-4xl">
               <span className="text-amber-300">Human feel</span> with <span className="text-amber-300">AI precision</span>

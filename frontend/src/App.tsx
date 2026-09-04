@@ -40,6 +40,7 @@ function App() {
           <Route path="/upload" element={<UploadWithWaveform />} />
           <Route path="/calibration" element={<CalibrationReviewer />} />
           <Route path="/calibration-admin" element={<CalibrationLab />} />
+          <Route path="/trackai-admin" element={<CalibrationLab />} />
           <Route path="/" element={<WebDAWAppV3 />} />
           <Route path="/v3" element={<Navigate to="/" replace />} />
           <Route path="/legacy" element={<WebDAWApp />} />

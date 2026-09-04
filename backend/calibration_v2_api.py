@@ -25,6 +25,7 @@ from backend.services.calibration_production_engine import validate_cfg_override
 from backend.services.calibration_trial_readiness import CalibrationTrialReadinessService
 from backend.services.calibration_trial_service import CalibrationDependencyError, CalibrationTrialService, TrialCreateInput
 from backend.services.production_performance_client import ProductionGenerationUnavailable
+from backend.trackai_platform import available_instrument_specs
 from backend.services.calibration_v2_repository import (
     CalibrationAuthorizationError,
     CalibrationRecordNotFound,
@@ -32,9 +33,20 @@ from backend.services.calibration_v2_repository import (
 )
 
 
+from backend.trackai_platform.bass_assimilation import BassAssimilationService
+from backend.trackai_platform.bass_contracts import BassSourceObservation
+from backend.trackai_platform.bass_review import BassSourceReview, JsonBassSourceReviewStore
+from backend.trackai_platform.bass_artifacts import JsonBassFeatureArtifactStore
+from backend.trackai_platform.bass_features import BassFeatureSet
+from backend.trackai_platform.bass_rollup import build_performer_rollup
+from backend.trackai_platform.source_intake import JsonSourceEvidenceRepository
+
 router = APIRouter(prefix="/calibration/v2", tags=["calibration-v2"])
 logger = logging.getLogger(__name__)
 _artifact_urls = ArtifactUrlService()
+_bass_source_repository = JsonSourceEvidenceRepository(os.getenv("BASSTRACKAI_SOURCE_EVIDENCE_ROOT", "data/trackai/bass/source-evidence"))
+_bass_assimilation = BassAssimilationService(_bass_source_repository)
+
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -148,6 +160,34 @@ def _require_reviewer_context(
         raise
     except Exception as exc:
         raise _http_error(exc) from exc
+
+
+
+
+class BassSourceIntakeRequest(BaseModel):
+    source_id: str = Field(min_length=1, max_length=200)
+    performer_profile_id: str = Field(min_length=1, max_length=200)
+    provenance_uri: str = Field(min_length=1, max_length=2000)
+    source_title: str = Field(min_length=1, max_length=500)
+    tempo_bpm: float = Field(gt=20, lt=400)
+    meter: str = Field(min_length=1, max_length=32)
+    key_center: Optional[str] = None
+    chord_map_id: Optional[str] = None
+    kick_alignment_score: float = Field(ge=0, le=1)
+    note_length_profile: str = Field(min_length=1, max_length=120)
+    articulation_tags: List[str] = Field(default_factory=list)
+    technique_tags: List[str] = Field(default_factory=list)
+    extraction_version: str = Field(min_length=1, max_length=120)
+    human_reviewed: bool = False
+
+
+class BassSourceReviewRequest(BaseModel):
+    source_id: str = Field(min_length=1, max_length=200)
+    performer_profile_id: str = Field(min_length=1, max_length=200)
+    reviewer_id: str = Field(min_length=1, max_length=200)
+    decision: Literal["accepted","rejected","needs_revision"]
+    confidence: float = Field(ge=0, le=1)
+    notes: str = Field(default="", max_length=4000)
 
 
 class ReviewerProvisionRequest(BaseModel):
@@ -300,6 +340,80 @@ def v2_health() -> Dict[str, Any]:
         "auto_queue_review_trials": _env_bool(
             "CALIBRATION_AUTO_QUEUE_REVIEW_TRIALS", default=False
         ),
+    }
+
+
+@router.get("/admin/bass/feature-artifacts")
+def bass_feature_artifacts(
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    from backend.trackai_platform.bass_artifacts import JsonBassFeatureArtifactStore
+    root = os.getenv("BASSTRACKAI_FEATURE_ARTIFACT_ROOT", "data/trackai/bass/features")
+    store = JsonBassFeatureArtifactStore(root)
+    return {"status": "ok", "items": store.list_payloads(), "execution_authorized": False}
+
+
+def _bass_calibration_status_payload(root: str) -> Dict[str, Any]:
+    from backend.trackai_platform.bass_calibration_service import JsonBassCalibrationStore
+    store = JsonBassCalibrationStore(root)
+    trials = store.trials()
+    profile_ids = sorted({str(x.get("performer_profile_id") or "").strip() for x in trials if str(x.get("performer_profile_id") or "").strip()})
+    return {
+        "status": "ok",
+        "items": [
+            {
+                "performer_profile_id": summary.performer_profile_id,
+                "trial_count": summary.trial_count,
+                "judgment_count": summary.judgment_count,
+                "mean_confidence": summary.mean_confidence,
+                "preferred_consistency": summary.preferred_consistency,
+                "rubric_agreement": summary.rubric_agreement,
+                "calibration_confidence": summary.calibration_confidence,
+                "calibration_state": summary.calibration_state,
+                "blockers": list(summary.blockers),
+                "execution_authorized": False,
+            }
+            for summary in (store.summary(profile_id) for profile_id in profile_ids)
+        ],
+        "trial_count": len(trials),
+        "execution_authorized": False,
+        "model_promotion_authorized": False,
+    }
+
+
+@router.get("/admin/bass/calibration-status")
+def bass_calibration_status(
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    root = os.getenv("BASSTRACKAI_CALIBRATION_ROOT", "data/trackai/bass/calibration")
+    return _bass_calibration_status_payload(root)
+
+
+@router.get("/platform/instruments")
+def platform_instruments(context=Depends(_require_reviewer_context)) -> Dict[str, Any]:
+    """Return the shared TracKAI instrument registry without granting generation authority."""
+    del context
+    return {
+        "schema_version": "1.0.0",
+        "items": [
+            {
+                "instrument_id": spec.instrument_id,
+                "product_id": spec.product_id,
+                "display_name": spec.display_name,
+                "subject_label": spec.subject_label,
+                "source_entity_label": spec.source_entity_label,
+                "generation_role": spec.generation_role,
+                "conditioning_inputs": list(spec.conditioning_inputs),
+                "ratings": [
+                    {"key": r.key, "label": r.label, "description": r.description}
+                    for r in spec.ratings
+                ],
+                "calibration_available": spec.instrument_id == "drums",
+                "execution_authorized": False,
+            }
+            for spec in available_instrument_specs()
+        ],
+        "execution_authorized": False,
     }
 
 
@@ -497,6 +611,74 @@ def create_treatment(
         return {"status": "ok", "treatment_id": treatment_id}
     except Exception as exc:
         raise _http_error(exc) from exc
+
+
+
+
+@router.post("/admin/platform/bass/sources")
+def ingest_bass_source(
+    payload: BassSourceIntakeRequest,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    try:
+        observation = BassSourceObservation(
+            source_id=payload.source_id, performer_profile_id=payload.performer_profile_id,
+            provenance_uri=payload.provenance_uri, tempo_bpm=payload.tempo_bpm, meter=payload.meter,
+            key_center=payload.key_center, chord_map_id=payload.chord_map_id,
+            kick_alignment_score=payload.kick_alignment_score, note_length_profile=payload.note_length_profile,
+            articulation_tags=tuple(payload.articulation_tags), technique_tags=tuple(payload.technique_tags),
+            extraction_version=payload.extraction_version,
+        )
+        fingerprint = _bass_assimilation.ingest_observation(
+            observation, source_title=payload.source_title, human_reviewed=payload.human_reviewed
+        )
+        return {"status":"ok","evidence_fingerprint":fingerprint,"execution_authorized":False}
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+@router.get("/admin/platform/bass/datasets/{performer_profile_id}")
+def bass_dataset_status(
+    performer_profile_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    status_value = _bass_assimilation.status(performer_profile_id)
+    return {"status":"ok","dataset":status_value.__dict__}
+
+@router.post("/admin/platform/bass/datasets/{performer_profile_id}/build-profile")
+def build_bass_assimilation_profile(
+    performer_profile_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    try:
+        profile = _bass_assimilation.build_profile(performer_profile_id)
+        return {"status":"ok","profile":profile.__dict__,"execution_authorized":False}
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/admin/platform/bass/source-reviews")
+def review_bass_source(
+    payload: BassSourceReviewRequest,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    review = BassSourceReview(payload.source_id,payload.performer_profile_id,payload.reviewer_id,payload.decision,payload.confidence,payload.notes)
+    store = JsonBassSourceReviewStore(os.getenv("BASSTRACKAI_REVIEW_ROOT", "data/trackai/bass/reviews"))
+    store.put(review)
+    _bass_source_repository.mark_human_reviewed("bass",payload.performer_profile_id,payload.source_id,payload.decision=="accepted")
+    return {"status":"ok","review_digest":review.digest(),"dataset":_bass_assimilation.status(payload.performer_profile_id).__dict__,"execution_authorized":False}
+
+@router.get("/admin/platform/bass/rollups/{performer_profile_id}")
+def bass_performer_rollup(
+    performer_profile_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    artifact_store=JsonBassFeatureArtifactStore(os.getenv("BASSTRACKAI_FEATURE_ARTIFACT_ROOT", "data/trackai/bass/features"))
+    payloads=[p for p in artifact_store.list_payloads() if p.get("performer_profile_id")==performer_profile_id]
+    feature_sets=[]
+    for p in payloads:
+        feature_sets.append(BassFeatureSet(**p["features"]))
+    rollup=build_performer_rollup(performer_profile_id,feature_sets)
+    return {"status":"ok","rollup":rollup.__dict__,"execution_authorized":False}
 
 
 @router.get("/admin/drummers/assimilation")
