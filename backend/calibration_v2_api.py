@@ -25,6 +25,7 @@ from backend.services.calibration_production_engine import validate_cfg_override
 from backend.services.calibration_trial_readiness import CalibrationTrialReadinessService
 from backend.services.calibration_trial_service import CalibrationDependencyError, CalibrationTrialService, TrialCreateInput
 from backend.services.production_performance_client import ProductionGenerationUnavailable
+from backend.trackai_platform import available_instrument_specs
 from backend.services.calibration_v2_repository import (
     CalibrationAuthorizationError,
     CalibrationRecordNotFound,
@@ -300,6 +301,34 @@ def v2_health() -> Dict[str, Any]:
         "auto_queue_review_trials": _env_bool(
             "CALIBRATION_AUTO_QUEUE_REVIEW_TRIALS", default=False
         ),
+    }
+
+
+@router.get("/platform/instruments")
+def platform_instruments(context=Depends(_require_reviewer_context)) -> Dict[str, Any]:
+    """Return the shared TracKAI instrument registry without granting generation authority."""
+    del context
+    return {
+        "schema_version": "1.0.0",
+        "items": [
+            {
+                "instrument_id": spec.instrument_id,
+                "product_id": spec.product_id,
+                "display_name": spec.display_name,
+                "subject_label": spec.subject_label,
+                "source_entity_label": spec.source_entity_label,
+                "generation_role": spec.generation_role,
+                "conditioning_inputs": list(spec.conditioning_inputs),
+                "ratings": [
+                    {"key": r.key, "label": r.label, "description": r.description}
+                    for r in spec.ratings
+                ],
+                "calibration_available": spec.instrument_id == "drums",
+                "execution_authorized": False,
+            }
+            for spec in available_instrument_specs()
+        ],
+        "execution_authorized": False,
     }
 
 

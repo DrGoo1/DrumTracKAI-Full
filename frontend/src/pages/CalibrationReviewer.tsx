@@ -8,9 +8,11 @@ import {
   ReviewerDrummer,
   ReviewerIdentity,
   ReviewerNextState,
+  TrackAIInstrumentRegistryItem,
   fetchNextReviewerState,
   fetchReviewerDrummers,
   fetchReviewerIdentity,
+  fetchTrackAIInstruments,
   submitReviewerItem,
 } from "../api/calibrationV2";
 import { supabase, supabaseConfigurationError } from "../lib/supabaseClient";
@@ -184,6 +186,8 @@ export default function CalibrationReviewer() {
   const [email, setEmail] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [identity, setIdentity] = useState<ReviewerIdentity | null>(null);
+  const [instruments, setInstruments] = useState<TrackAIInstrumentRegistryItem[]>([]);
+  const [selectedInstrument, setSelectedInstrument] = useState("drums");
   const [drummers, setDrummers] = useState<ReviewerDrummer[]>([]);
   const [selectedDrummer, setSelectedDrummer] = useState("");
   const [item, setItem] = useState<CalibrationReviewerItem | null>(null);
@@ -250,6 +254,8 @@ export default function CalibrationReviewer() {
       if (!nextSession) {
         clearPoll();
         setIdentity(null);
+        setInstruments([]);
+        setSelectedInstrument("drums");
         setDrummers([]);
         setSelectedDrummer("");
         setNextState(null);
@@ -295,11 +301,13 @@ export default function CalibrationReviewer() {
     setBusy(true);
     setError("");
     try {
-      const [me, availableDrummers] = await Promise.all([
+      const [me, availableDrummers, availableInstruments] = await Promise.all([
         fetchReviewerIdentity(currentSession),
         fetchReviewerDrummers(currentSession),
+        fetchTrackAIInstruments(currentSession),
       ]);
       setIdentity(me);
+      setInstruments(availableInstruments);
       setDrummers(availableDrummers);
       const initialSlug = availableDrummers[0]?.drummer_slug || "";
       setSelectedDrummer(initialSlug);
@@ -433,9 +441,9 @@ export default function CalibrationReviewer() {
   if (!session) {
     return (
       <main className="mx-auto max-w-xl p-6 text-slate-100">
-        <h1 className="text-3xl font-semibold">DrumTracKAI Expert Calibration</h1>
+        <h1 className="text-3xl font-semibold">TracKAI Expert Calibration</h1>
         <p className="mt-3 text-slate-300">
-          This invitation-only portal collects blinded evaluations from experienced drummers.
+          This invitation-only portal collects blinded evaluations for instrument-specific TracKAI models.
         </p>
         <form className="mt-8 rounded-xl border border-slate-700 bg-slate-900 p-5" onSubmit={requestMagicLink}>
           <label className="block text-sm font-medium text-slate-200">
@@ -463,7 +471,7 @@ export default function CalibrationReviewer() {
     <main className="mx-auto max-w-6xl p-4 text-slate-100 md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">Expert drummer calibration</h1>
+          <h1 className="text-3xl font-semibold">TracKAI expert calibration</h1>
           <p className="mt-1 text-sm text-slate-400">
             Signed in as {identity?.display_name || session.user.email || "reviewer"}. Candidate identities are blinded.
           </p>
@@ -478,6 +486,40 @@ export default function CalibrationReviewer() {
       </div>
 
       <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          <label className="text-sm text-slate-200">
+            TracKAI instrument
+            <select
+              className="mt-1 w-full rounded-md border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+              value={selectedInstrument}
+              onChange={(event) => {
+                const next = event.target.value;
+                clearPoll();
+                setSelectedInstrument(next);
+                resetReview(null);
+                setNextState(null);
+              }}
+            >
+              {(instruments.length ? instruments : [{ instrument_id: "drums", display_name: "DrumTracKAI", calibration_available: true } as TrackAIInstrumentRegistryItem]).map((instrument) => (
+                <option key={instrument.instrument_id} value={instrument.instrument_id}>
+                  {instrument.display_name}{instrument.calibration_available ? "" : " · setup in progress"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3 text-xs text-slate-400">
+            Shared reviewer, provenance, artifact, job, and calibration infrastructure. Instrument-specific rubrics and models are loaded by the selected TracKAI.
+          </div>
+        </div>
+        {selectedInstrument !== "drums" ? (
+          <div className="rounded-lg border border-cyan-800 bg-cyan-950/30 p-5">
+            <h2 className="font-semibold text-cyan-100">BassTracKAI platform module is registered</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Bass-specific conditioning and calibration rubrics are available in the shared platform. Source assimilation, rendered comparison inventory, and production model promotion are not yet provisioned, so calibration execution remains disabled.
+            </p>
+          </div>
+        ) : (
+        <>
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-64 flex-1 text-sm text-slate-200">
             Assimilated drummer model
@@ -522,6 +564,8 @@ export default function CalibrationReviewer() {
               {selectedModel.ready_trial_count} ready · {selectedModel.queued_trial_count} preparing
             </span>
           </div>
+        )}
+        </>
         )}
       </section>
 

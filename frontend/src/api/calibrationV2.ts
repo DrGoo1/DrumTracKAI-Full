@@ -234,3 +234,24 @@ export async function submitReviewerItem(
     idempotencyKey,
   );
 }
+
+export interface TrackAIInstrumentRegistryItem {
+  instrument_id: "drums" | "bass" | string;
+  product_id: string;
+  display_name: string;
+  subject_label: string;
+  source_entity_label: string;
+  generation_role: string;
+  conditioning_inputs: string[];
+  ratings: Array<{ key: string; label: string; description: string }>;
+  calibration_available: boolean;
+  execution_authorized: false;
+}
+
+export async function fetchTrackAIInstruments(session: Session): Promise<TrackAIInstrumentRegistryItem[]> {
+  const response = await apiRequest<{ items: TrackAIInstrumentRegistryItem[] }>(
+    session,
+    "/calibration/v2/platform/instruments",
+  );
+  return response.items || [];
+}
