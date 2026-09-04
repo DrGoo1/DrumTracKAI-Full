@@ -11,3 +11,8 @@ from .bass_features import BassNoteEvent, BassFeatureSet, normalize_midi_notes, 
 
 from .bass_adapters import analyzed_audio_to_note_events, midi_file_to_note_events
 from .bass_artifacts import BassFeatureArtifact, JsonBassFeatureArtifactStore
+
+from .bass_review import BassSourceReview, JsonBassSourceReviewStore
+from .bass_rollup import BassPerformerRollup, build_performer_rollup
+from .bass_calibration import BassCalibrationCandidate, BassCalibrationTrial, BassCalibrationJudgment
+from .studiomind_bass_handoff import StudioMindBassHandoff, build_studiomind_bass_handoff
