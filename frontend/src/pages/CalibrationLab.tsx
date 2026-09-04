@@ -835,6 +835,7 @@ const extractItemIdFromGenerateError = (error: unknown): string | null => {
 
 const CalibrationLab: React.FC = () => {
   const [drummers, setDrummers] = useState<DrummerListItem[]>([]);
+  const [selectedInstrument, setSelectedInstrument] = useState<'drums' | 'bass'>('drums');
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | CompletionStatus>('all');
