@@ -330,6 +330,16 @@ def v2_health() -> Dict[str, Any]:
     }
 
 
+@router.get("/admin/bass/feature-artifacts")
+def bass_feature_artifacts(
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    from backend.trackai_platform.bass_artifacts import JsonBassFeatureArtifactStore
+    root = os.getenv("BASSTRACKAI_FEATURE_ARTIFACT_ROOT", "data/trackai/bass/features")
+    store = JsonBassFeatureArtifactStore(root)
+    return {"status": "ok", "items": store.list_payloads(), "execution_authorized": False}
+
+
 @router.get("/platform/instruments")
 def platform_instruments(context=Depends(_require_reviewer_context)) -> Dict[str, Any]:
     """Return the shared TracKAI instrument registry without granting generation authority."""

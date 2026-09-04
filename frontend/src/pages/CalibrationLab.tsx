@@ -1745,6 +1745,19 @@ const CalibrationLab: React.FC = () => {
             <p className="mt-2 text-sm text-slate-300">The backend now accepts authenticated Bass source evidence at <code>/calibration/v2/admin/platform/bass/sources</code> and reports performer dataset readiness through the shared platform API. No production Bass dataset has been promoted yet.</p>
             <div className="mt-4 rounded-lg border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-100">Execution authority: disabled · Model promotion: blocked pending human-reviewed source inventory and live calibration.</div>
           </section>
+          <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+            <h2 className="text-lg font-semibold">Persisted feature artifacts</h2>
+            <p className="mt-1 text-xs text-slate-400">{bassFeatureArtifacts.length} source artifact{bassFeatureArtifacts.length === 1 ? '' : 's'} available.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {bassFeatureArtifacts.slice(0, 8).map((artifact) => (
+                <div key={artifact.source_id} className="rounded-lg border border-slate-800 bg-black/20 p-3 text-xs text-slate-300">
+                  <div className="font-medium text-slate-100">{artifact.source_id}</div>
+                  <div className="mt-1">Events {artifact.features?.event_count ?? 0} · Kick lock {Math.round((artifact.features?.kick_lock_score ?? 0) * 100)}% · Chord tones {Math.round((artifact.features?.chord_tone_ratio ?? 0) * 100)}%</div>
+                  <div className="mt-1 text-slate-500">{(artifact.features?.technique_tags || []).join(' · ') || 'No technique tags yet'}</div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     );
