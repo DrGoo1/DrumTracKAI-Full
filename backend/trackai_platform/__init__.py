@@ -6,3 +6,5 @@ from .bass_contracts import BassAssimilationProfile, BassGenerationPlan, BassSou
 __all__ = ["BassAssimilationProfile","BassGenerationPlan","BassSourceObservation","build_bass_plan"]
 from .source_intake import SourceEvidence, InMemorySourceEvidenceRepository
 from .bass_assimilation import BassAssimilationService, BassDatasetStatus
+
+from .bass_features import BassNoteEvent, BassFeatureSet, normalize_midi_notes, normalize_audio_events, extract_bass_features, observation_from_features
