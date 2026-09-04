@@ -4,3 +4,5 @@ __all__ = ["BASS", "DRUMS", "InstrumentSpec", "RatingDimension", "available_inst
 
 from .bass_contracts import BassAssimilationProfile, BassGenerationPlan, BassSourceObservation, build_bass_plan
 __all__ = ["BassAssimilationProfile","BassGenerationPlan","BassSourceObservation","build_bass_plan"]
+from .source_intake import SourceEvidence, InMemorySourceEvidenceRepository
+from .bass_assimilation import BassAssimilationService, BassDatasetStatus

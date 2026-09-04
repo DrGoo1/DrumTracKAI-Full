@@ -33,9 +33,16 @@ from backend.services.calibration_v2_repository import (
 )
 
 
+from backend.trackai_platform.bass_assimilation import BassAssimilationService
+from backend.trackai_platform.bass_contracts import BassSourceObservation
+from backend.trackai_platform.source_intake import InMemorySourceEvidenceRepository
+
 router = APIRouter(prefix="/calibration/v2", tags=["calibration-v2"])
 logger = logging.getLogger(__name__)
 _artifact_urls = ArtifactUrlService()
+_bass_source_repository = InMemorySourceEvidenceRepository()
+_bass_assimilation = BassAssimilationService(_bass_source_repository)
+
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -149,6 +156,25 @@ def _require_reviewer_context(
         raise
     except Exception as exc:
         raise _http_error(exc) from exc
+
+
+
+
+class BassSourceIntakeRequest(BaseModel):
+    source_id: str = Field(min_length=1, max_length=200)
+    performer_profile_id: str = Field(min_length=1, max_length=200)
+    provenance_uri: str = Field(min_length=1, max_length=2000)
+    source_title: str = Field(min_length=1, max_length=500)
+    tempo_bpm: float = Field(gt=20, lt=400)
+    meter: str = Field(min_length=1, max_length=32)
+    key_center: Optional[str] = None
+    chord_map_id: Optional[str] = None
+    kick_alignment_score: float = Field(ge=0, le=1)
+    note_length_profile: str = Field(min_length=1, max_length=120)
+    articulation_tags: List[str] = Field(default_factory=list)
+    technique_tags: List[str] = Field(default_factory=list)
+    extraction_version: str = Field(min_length=1, max_length=120)
+    human_reviewed: bool = False
 
 
 class ReviewerProvisionRequest(BaseModel):
@@ -524,6 +550,49 @@ def create_treatment(
             status_value=payload.status,
         )
         return {"status": "ok", "treatment_id": treatment_id}
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+
+
+@router.post("/admin/platform/bass/sources")
+def ingest_bass_source(
+    payload: BassSourceIntakeRequest,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    try:
+        observation = BassSourceObservation(
+            source_id=payload.source_id, performer_profile_id=payload.performer_profile_id,
+            provenance_uri=payload.provenance_uri, tempo_bpm=payload.tempo_bpm, meter=payload.meter,
+            key_center=payload.key_center, chord_map_id=payload.chord_map_id,
+            kick_alignment_score=payload.kick_alignment_score, note_length_profile=payload.note_length_profile,
+            articulation_tags=tuple(payload.articulation_tags), technique_tags=tuple(payload.technique_tags),
+            extraction_version=payload.extraction_version,
+        )
+        fingerprint = _bass_assimilation.ingest_observation(
+            observation, source_title=payload.source_title, human_reviewed=payload.human_reviewed
+        )
+        return {"status":"ok","evidence_fingerprint":fingerprint,"execution_authorized":False}
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+@router.get("/admin/platform/bass/datasets/{performer_profile_id}")
+def bass_dataset_status(
+    performer_profile_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    status_value = _bass_assimilation.status(performer_profile_id)
+    return {"status":"ok","dataset":status_value.__dict__}
+
+@router.post("/admin/platform/bass/datasets/{performer_profile_id}/build-profile")
+def build_bass_assimilation_profile(
+    performer_profile_id: str,
+    _admin: AuthenticatedUser = Depends(_require_admin),
+) -> Dict[str, Any]:
+    try:
+        profile = _bass_assimilation.build_profile(performer_profile_id)
+        return {"status":"ok","profile":profile.__dict__,"execution_authorized":False}
     except Exception as exc:
         raise _http_error(exc) from exc
 

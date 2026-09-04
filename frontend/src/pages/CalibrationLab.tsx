@@ -1713,6 +1713,35 @@ const CalibrationLab: React.FC = () => {
     return `${apiBase.replace(/\/$/, '')}/calibration/analysis/${encodeURIComponent(sourceAnalysisId)}`;
   }, [sourceAnalysisId]);
 
+  if (selectedInstrument === 'bass') {
+    return (
+      <div className="min-h-screen bg-[#09031a] p-6 text-white">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-cyan-300/80">Shared TracKAI Admin</p>
+              <h1 className="mt-2 text-4xl font-black">BassTracKAI Research Workspace</h1>
+              <p className="mt-3 max-w-3xl text-slate-300">Source evidence, assimilation readiness, and generation-plan preparation use the same research control plane as DrumTracKAI. Bass execution remains disabled until calibration and provider certification are complete.</p>
+            </div>
+            <select value={selectedInstrument} onChange={(event) => setSelectedInstrument(event.target.value as 'drums' | 'bass')} className="rounded-lg border border-cyan-700 bg-slate-950 px-4 py-2">
+              <option value="drums">DrumTracKAI</option><option value="bass">BassTracKAI</option>
+            </select>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {[['Source intake','Provenance-bound bass performance observations with versioned extraction evidence.'],['Assimilation','Minimum-source, human-review, and extractor-consistency gates must all pass.'],['Generation','Plans bind harmony, kick events, sections, role, density, articulation, provider, and model versions.']].map(([title,body]) => (
+              <section key={title} className="rounded-xl border border-cyan-900 bg-cyan-950/20 p-5"><h2 className="font-semibold text-cyan-100">{title}</h2><p className="mt-2 text-sm text-slate-300">{body}</p></section>
+            ))}
+          </div>
+          <section className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+            <h2 className="text-lg font-semibold">Dataset provisioning</h2>
+            <p className="mt-2 text-sm text-slate-300">The backend now accepts authenticated Bass source evidence at <code>/calibration/v2/admin/platform/bass/sources</code> and reports performer dataset readiness through the shared platform API. No production Bass dataset has been promoted yet.</p>
+            <div className="mt-4 rounded-lg border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-100">Execution authority: disabled · Model promotion: blocked pending human-reviewed source inventory and live calibration.</div>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#09031a] text-white">
       <header className="relative overflow-hidden border-b border-purple-500/20 bg-gradient-to-br from-purple-950/80 via-purple-900/40 to-amber-900/20">
@@ -1722,6 +1751,7 @@ const CalibrationLab: React.FC = () => {
         </div>
         <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-6 py-14 md:flex-row md:items-center md:justify-between">
           <div className="max-w-3xl">
+            <div className="mb-4 flex items-center gap-3"><span className="text-xs uppercase tracking-[0.3em] text-purple-200/70">TracKAI workspace</span><select value={selectedInstrument} onChange={(event) => setSelectedInstrument(event.target.value as 'drums' | 'bass')} className="rounded-lg border border-purple-600 bg-purple-950 px-3 py-2 text-sm"><option value="drums">DrumTracKAI</option><option value="bass">BassTracKAI</option></select></div>
             <h1 className="text-5xl font-black leading-tight md:text-7xl">Drummer Calibration Lab</h1>
             <p className="mt-4 text-2xl font-bold leading-tight md:text-4xl">
               <span className="text-amber-300">Human feel</span> with <span className="text-amber-300">AI precision</span>
