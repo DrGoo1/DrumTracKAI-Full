@@ -836,6 +836,7 @@ const extractItemIdFromGenerateError = (error: unknown): string | null => {
 const CalibrationLab: React.FC = () => {
   const [drummers, setDrummers] = useState<DrummerListItem[]>([]);
   const [selectedInstrument, setSelectedInstrument] = useState<'drums' | 'bass'>('drums');
+  const [bassFeatureArtifacts, setBassFeatureArtifacts] = useState<any[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | CompletionStatus>('all');
@@ -870,6 +871,13 @@ const CalibrationLab: React.FC = () => {
     value: null,
   });
   const artifactPollStateRef = useRef<{ itemId: string | null; attempts: number }>({ itemId: null, attempts: 0 });
+  useEffect(() => {
+    if (selectedInstrument !== 'bass') return;
+    void axios.get(`${API_BASE}/calibration/v2/admin/bass/feature-artifacts`).then((response) => {
+      setBassFeatureArtifacts(response.data?.items || []);
+    }).catch(() => setBassFeatureArtifacts([]));
+  }, [selectedInstrument]);
+
   const artifactPollBusyRef = useRef(false);
   const [artifactPollInfo, setArtifactPollInfo] = useState<{ active: boolean; attempts: number; lastCheckedAt: number | null }>(
     {

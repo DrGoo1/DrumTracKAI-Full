@@ -8,3 +8,6 @@ from .source_intake import SourceEvidence, InMemorySourceEvidenceRepository
 from .bass_assimilation import BassAssimilationService, BassDatasetStatus
 
 from .bass_features import BassNoteEvent, BassFeatureSet, normalize_midi_notes, normalize_audio_events, extract_bass_features, observation_from_features
+
+from .bass_adapters import analyzed_audio_to_note_events, midi_file_to_note_events
+from .bass_artifacts import BassFeatureArtifact, JsonBassFeatureArtifactStore
