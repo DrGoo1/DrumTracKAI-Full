@@ -16,3 +16,5 @@ from .bass_review import BassSourceReview, JsonBassSourceReviewStore
 from .bass_rollup import BassPerformerRollup, build_performer_rollup
 from .bass_calibration import BassCalibrationCandidate, BassCalibrationTrial, BassCalibrationJudgment
 from .studiomind_bass_handoff import StudioMindBassHandoff, build_studiomind_bass_handoff
+
+from .bass_calibration_service import BassCalibrationSummary, JsonBassCalibrationStore
