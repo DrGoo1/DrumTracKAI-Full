@@ -18,3 +18,4 @@ from .bass_calibration import BassCalibrationCandidate, BassCalibrationTrial, Ba
 from .studiomind_bass_handoff import StudioMindBassHandoff, build_studiomind_bass_handoff
 
 from .bass_calibration_service import BassCalibrationSummary, JsonBassCalibrationStore
+from .bass_candidate_loop import BassCandidateRenderRequest, BassCandidateRenderReceipt, prepare_candidate_render_request, register_rendered_candidate, build_blinded_trial
